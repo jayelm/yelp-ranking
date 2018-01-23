@@ -99,3 +99,7 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+yelp_dataset.tar.gz
+# From yelp
+dataset/
