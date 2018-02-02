@@ -1,0 +1,94 @@
+"""
+Preprocess dataset/review.json
+"""
+
+from collections import defaultdict, namedtuple
+import json
+from tqdm import tqdm
+import itertools
+import pandas as pd
+
+REVIEW_FILE = 'dataset/review.json'
+
+USERS_FILE = 'dataset_processed/users.tsv'
+BUSINESSES_FILE = 'dataset_processed/businesses.tsv'
+MATCHES_FILE = 'dataset_processed/matches.tsv'
+
+Review = namedtuple('Review', ['user_id', 'business_id', 'stars'])
+
+
+def review_from_json_str(json_str):
+    review_json = json.loads(json_str)
+    return Review(review_json['user_id'],
+                  review_json['business_id'],
+                  review_json['stars'])
+
+
+def file_len(fname):
+    with open(fname) as f:
+        for i, l in enumerate(f):
+            pass
+    return i + 1
+
+
+if __name__ == '__main__':
+    from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+
+    parser = ArgumentParser(
+        description='Preprocess reviews',
+        formatter_class=ArgumentDefaultsHelpFormatter)
+
+    args = parser.parse_args()
+
+    all_reviews = defaultdict(list)
+    all_users = set()
+    business_ratings = defaultdict(list)
+
+    n_lines = file_len(REVIEW_FILE)
+    print("{} reviews".format(n_lines))
+
+    # Load reviews
+    with open(REVIEW_FILE, 'r') as rf:
+        for line in tqdm(rf, total=n_lines, desc='Loading reviews'):
+            review = review_from_json_str(line)
+            all_reviews[review.user_id].append(review)
+            all_users.add(review.user_id)
+            business_ratings[review.business_id].append(review.stars)
+
+    print("{} users".format(len(all_users)))
+    print("{} businesses".format(len(business_ratings.keys())))
+
+    avg_business_records = [(b, sum(rs) / len(rs), len(rs))
+                            for b, rs in business_ratings.items()]
+    business_df = pd.DataFrame(
+        avg_business_records,
+        columns=['business_id', 'avg_rating', 'n_reviews'])
+    business_df.to_csv(BUSINESSES_FILE, sep='\t')
+    businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
+
+    # Convert users and businesses into integer ids
+    users_df = pd.DataFrame(list(all_users),
+                            columns=['user_id'])
+    users_df.to_csv(USERS_FILE, sep='\t')
+    users_to_ids = dict(zip(users_df.user_id, users_df.index))
+
+    review_matches = []
+
+    for user, user_reviews in tqdm(all_reviews.items(),
+                                   total=len(all_reviews.keys()),
+                                   desc="Creating matches"):
+        uid = users_to_ids[user]
+        review_tuples = [(businesses_to_ids[r.business_id], r.stars)
+                         for r in user_reviews]
+        for r1, r2 in itertools.combinations(review_tuples, 2):
+            if r1[1] > r2[1]:
+                win = 1
+            elif r1[1] < r2[1]:
+                win = -1
+            else:
+                win = 0  # Draw
+            review_matches.append((uid, r1[0], r2[0], win))
+
+    matches_df = pd.DataFrame(review_matches,
+                              columns=['user', 'b1', 'b2', 'win'])
+    matches_df.to_csv(MATCHES_FILE, sep='\t')
