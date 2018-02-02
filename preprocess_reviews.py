@@ -7,12 +7,13 @@ import json
 from tqdm import tqdm
 import itertools
 import pandas as pd
+import numpy as np
 
 REVIEW_FILE = 'dataset/review.json'
 
-USERS_FILE = 'dataset_processed/users.tsv'
-BUSINESSES_FILE = 'dataset_processed/businesses.tsv'
-MATCHES_FILE = 'dataset_processed/matches.tsv'
+USERS_FILE = 'dataset_processed/users.pkl'
+BUSINESSES_FILE = 'dataset_processed/businesses.pkl'
+MATCHES_FILE = 'dataset_processed/matches.pkl'
 
 Review = namedtuple('Review', ['user_id', 'business_id', 'stars'])
 
@@ -62,14 +63,24 @@ if __name__ == '__main__':
                             for b, rs in business_ratings.items()]
     business_df = pd.DataFrame(
         avg_business_records,
-        columns=['business_id', 'avg_rating', 'n_reviews'])
-    business_df.to_csv(BUSINESSES_FILE, sep='\t')
+        columns=['business_id', 'avg_rating', 'n_reviews'],
+    )
+    # Smaller dtypes to save space
+    assert business_df.n_reviews.min() > 0
+    assert business_df.n_reviews.max() < np.iinfo(np.uint16).max
+
+    business_df.n_reviews = business_df.n_reviews.astype(np.uint16)
+    business_df.avg_rating = business_df.avg_rating.astype(np.float32)
+    business_df.business_id = business_df.business_id.astype(np.character)
+
+    business_df.to_pickle(BUSINESSES_FILE)
     businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
 
     # Convert users and businesses into integer ids
     users_df = pd.DataFrame(list(all_users),
                             columns=['user_id'])
-    users_df.to_csv(USERS_FILE, sep='\t')
+    users_df.user_id = users_df.user_id.astype(np.character)
+    users_df.to_pickle(USERS_FILE)
     users_to_ids = dict(zip(users_df.user_id, users_df.index))
 
     review_matches = []
@@ -89,6 +100,21 @@ if __name__ == '__main__':
                 win = 0  # Draw
             review_matches.append((uid, r1[0], r2[0], win))
 
+    print("Creating dataframe")
     matches_df = pd.DataFrame(review_matches,
                               columns=['user', 'b1', 'b2', 'win'])
-    matches_df.to_csv(MATCHES_FILE, sep='\t')
+    # Better dtypes
+    assert matches_df.user.min() > 0
+    assert matches_df.user.max() < np.iinfo(np.uint32).max
+    assert matches_df.b1.min() > 0
+    assert matches_df.b1.max() < np.iinfo(np.uint32).max
+    assert matches_df.b2.min() > 0
+    assert matches_df.b2.max() < np.iinfo(np.uint32).max
+
+    matches_df.user = matches_df.user.astype(np.uint32)
+    matches_df.b1 = matches_df.b1.astype(np.uint32)
+    matches_df.b2 = matches_df.b2.astype(np.uint32)
+    matches_df.win = matches_df.win.astype(np.int8)
+
+    print("Saving to file")
+    matches_df.to_pickle(MATCHES_FILE)
