@@ -71,17 +71,19 @@ if __name__ == '__main__':
 
     business_df.n_reviews = business_df.n_reviews.astype(np.uint16)
     business_df.avg_rating = business_df.avg_rating.astype(np.float32)
+    # Make dict *before* coercing to bytes
+    businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
     business_df.business_id = business_df.business_id.astype(np.character)
 
     business_df.to_pickle(BUSINESSES_FILE)
-    businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
 
     # Convert users and businesses into integer ids
     users_df = pd.DataFrame(list(all_users),
                             columns=['user_id'])
+    # Make dict *before* coercing to bytes
+    users_to_ids = dict(zip(users_df.user_id, users_df.index))
     users_df.user_id = users_df.user_id.astype(np.character)
     users_df.to_pickle(USERS_FILE)
-    users_to_ids = dict(zip(users_df.user_id, users_df.index))
 
     review_matches = []
 
