@@ -106,11 +106,11 @@ if __name__ == '__main__':
     matches_df = pd.DataFrame(review_matches,
                               columns=['user', 'b1', 'b2', 'win'])
     # Better dtypes
-    assert matches_df.user.min() > 0
+    assert matches_df.user.min() >= 0
     assert matches_df.user.max() < np.iinfo(np.uint32).max
-    assert matches_df.b1.min() > 0
+    assert matches_df.b1.min() >= 0
     assert matches_df.b1.max() < np.iinfo(np.uint32).max
-    assert matches_df.b2.min() > 0
+    assert matches_df.b2.min() >= 0
     assert matches_df.b2.max() < np.iinfo(np.uint32).max
 
     matches_df.user = matches_df.user.astype(np.uint32)
