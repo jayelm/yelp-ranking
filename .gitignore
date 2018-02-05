@@ -103,3 +103,6 @@ ENV/
 yelp_dataset.tar.gz
 # From yelp
 dataset/
+
+# Processed files are still really big
+dataset_processed/
