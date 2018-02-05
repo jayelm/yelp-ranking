@@ -1,5 +1,5 @@
 # Byte-compiled / optimized / DLL files
-__pycache__/
+e_pycache__/
 *.py[cod]
 *$py.class
 
@@ -106,3 +106,6 @@ dataset/
 
 # Processed files are still really big
 dataset_processed/
+
+results/*
+!results/README.md
