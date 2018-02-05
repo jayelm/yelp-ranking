@@ -12,6 +12,11 @@ import ctypes
 import multiprocessing as mp
 from collections import namedtuple
 
+import pyximport
+pyximport.install(
+    setup_args={'include_dirs': [np.get_include()]})
+import fast_m_acc
+
 
 MPArgs = namedtuple('MPArgs', ['mu_s', 'p_s',
                                'winner', 'loser', 'j',
@@ -151,7 +156,7 @@ def gaussian_ep_mp(M, n_players, n_cpu=2):
         yield (mu_s, np.sqrt(1 / p_s))
 
 
-def gaussian_ep(M, n_players):
+def gaussian_ep(M, n_players, fast_m_acc=False):
     N = len(M)
     it = 0
 
@@ -164,13 +169,17 @@ def gaussian_ep(M, n_players):
         # Let skills be N(mu_s, 1/p_s)
         p_s = np.ones(n_players) * 1 / 0.5
         mu_s = np.zeros(n_players)
-        M_with_progress = tqdm(M, total=N, desc='MP iter {}'.format(it))
 
-        for j, (winner, loser) in enumerate(M_with_progress):
-            p_s[winner] += p_gs[j, 0]
-            p_s[loser] += p_gs[j, 1]
-            mu_s[winner] += mu_gs[j, 0] * p_gs[j, 0]
-            mu_s[loser] += mu_gs[j, 1] * p_gs[j, 1]
+        if fast_m_acc:
+            fma.fast_m_acc(M, p_s, mu_s, p_gs, mu_gs, N)
+        else:
+            M_with_progress = tqdm(M, total=N, desc='MP iter {}'.format(it))
+
+            for j, (winner, loser) in enumerate(M_with_progress):
+                p_s[winner] += p_gs[j, 0]
+                p_s[loser] += p_gs[j, 1]
+                mu_s[winner] += mu_gs[j, 0] * p_gs[j, 0]
+                mu_s[loser] += mu_gs[j, 1] * p_gs[j, 1]
 
         mu_s = mu_s / p_s
 
