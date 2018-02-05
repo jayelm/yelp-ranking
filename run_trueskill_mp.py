@@ -12,11 +12,6 @@ import ctypes
 import multiprocessing as mp
 from collections import namedtuple
 
-import pyximport
-pyximport.install(
-    setup_args={'include_dirs': [np.get_include()]})
-import fast_m_acc as fma
-
 
 MPArgs = namedtuple('MPArgs', ['mu_s', 'p_s',
                                'winner', 'loser', 'j',
@@ -257,6 +252,13 @@ if __name__ == '__main__':
         help='How to handle draws')
 
     args = parser.parse_args()
+
+    if args.fast_m_acc:
+        global fma
+        import pyximport
+        pyximport.install(
+            setup_args={'include_dirs': [np.get_include()]})
+        import fast_m_acc as fma
 
     print("Loading matches")
     matches = pd.read_pickle(MATCHES_FILE)
