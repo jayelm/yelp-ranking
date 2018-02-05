@@ -15,7 +15,7 @@ from collections import namedtuple
 import pyximport
 pyximport.install(
     setup_args={'include_dirs': [np.get_include()]})
-import fast_m_acc
+import fast_m_acc as fma
 
 
 MPArgs = namedtuple('MPArgs', ['mu_s', 'p_s',
@@ -245,6 +245,11 @@ if __name__ == '__main__':
         help='Where to save')
 
     parser.add_argument(
+        '--fast_m_acc',
+        action='store_true',
+        help='Use cython-optimized accumulator')
+
+    parser.add_argument(
         '--draw',
         type=str,
         default='drop',
@@ -255,6 +260,7 @@ if __name__ == '__main__':
 
     print("Loading matches")
     matches = pd.read_pickle(MATCHES_FILE)
+    matches = matches[:9000000]
     # Convert such that b1 is the winning column and b2 is the losing column
     businesses = pd.read_pickle(BUSINESSES_FILE)
     n_businesses = businesses.shape[0]
@@ -286,7 +292,8 @@ if __name__ == '__main__':
     if args.n_cpu > 1:
         gep = gaussian_ep_mp(matches, n_businesses, args.n_cpu)
     else:
-        gep = gaussian_ep(matches, n_businesses)
+        gep = gaussian_ep(matches, n_businesses,
+                          fast_m_acc=args.fast_m_acc)
     gep_with_progress = zip(
         trange(args.num_samples, desc='MP'), gep)
     for it, mean_and_stdev in gep_with_progress:

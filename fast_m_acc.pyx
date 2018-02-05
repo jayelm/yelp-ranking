@@ -5,6 +5,7 @@ the main message passing bottleneck - looping through all matches.
 
 import numpy as np
 cimport numpy as np
+cimport cython
 
 
 # Type used for indexing into numpy arrays
@@ -15,6 +16,8 @@ ctypedef np.uint32_t DTYPE_t
 FTYPE = np.float64
 ctypedef np.float64_t FTYPE_t
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def fast_m_acc(np.ndarray M, np.ndarray p_s, np.ndarray mu_s,
                np.ndarray p_gs, np.ndarray mu_gs, int N):
     assert (M.dtype == DTYPE and
