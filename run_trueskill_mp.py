@@ -260,7 +260,6 @@ if __name__ == '__main__':
 
     print("Loading matches")
     matches = pd.read_pickle(MATCHES_FILE)
-    matches = matches[:9000000]
     # Convert such that b1 is the winning column and b2 is the losing column
     businesses = pd.read_pickle(BUSINESSES_FILE)
     n_businesses = businesses.shape[0]
