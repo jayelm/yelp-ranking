@@ -19,6 +19,8 @@ if __name__ == '__main__':
 
     parser.add_argument('mp_file', type=str,
                         help='MP samples file to load')
+    parser.add_argument('--gzip', action='store_true',
+                        help='Gzip the CSV file')
 
     args = parser.parse_args()
 
@@ -51,6 +53,10 @@ if __name__ == '__main__':
 
     businesses.business_id = businesses.business_id.astype(str)
 
-    csv_name = 'results/businesses_{}'.format(
-        os.path.basename(args.mp_file)).replace('.npy', '.csv.gz')
-    businesses.to_csv(csv_name, index=False, compression='gzip')
+    csv_name = 'results/businesses_{}'.format(os.path.basename(args.mp_file))
+    if args.gzip:
+        csv_name = csv_name.replace('.npy', '.csv.gz')
+    else:
+        csv_name = csv_name.replace('.npy', '.csv')
+    businesses.to_csv(csv_name, index=False,
+                      compression='gzip' if args.gzip else None)
