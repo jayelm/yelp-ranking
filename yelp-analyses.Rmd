@@ -1,0 +1,50 @@
+---
+title: "Yelp Analyses"
+author: "Jesse Mu"
+date: "2/12/2018"
+output: html_document
+---
+
+```{r setup, includ:=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(cowplot)
+library(ggExtra)
+library(igraph)
+library(data.table)
+```
+
+```{r}
+bs = read.csv('results/businesses_mp_dropdraws_20.csv') %>%
+  tbl_df
+```
+
+```{r}
+ggplot(bs, aes(x = ts_rating, y = star_rating)) +
+  geom_point(alpha = 0.05) +
+  xlab('TrueSkill Rating') +
+  ylab('Star Rating')
+```
+
+TODO: User IDs don't start at 0! Verify that that's okay? Could be that users
+have only reviewed one business
+
+TODO: Something like...what about matches where it's just an average of people's
+votes, instead of user votes
+
+```{r}
+# NOTE: This takes a lot of time/memory
+ms_graph = fread('dataset_processed/matches.csv') %>%
+  tbl_df %>%
+  filter(win != 0) %>%
+  select(b1, b2) %>%
+  as.matrix
+ms_graph = ms_graph + 1
+ms_graph = graph_from_edgelist(ms_graph, directed = FALSE)
+```
+
+```{r}
+png('graph.png', 2000, 2000)
+plot(ms_graph)
+dev.off()
+```
