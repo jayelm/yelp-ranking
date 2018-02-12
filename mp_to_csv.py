@@ -52,5 +52,5 @@ if __name__ == '__main__':
     businesses.business_id = businesses.business_id.astype(str)
 
     csv_name = 'results/businesses_{}'.format(
-        os.path.basename(args.mp_file)).replace('.npy', '.csv')
-    businesses.to_csv(csv_name, index=False)
+        os.path.basename(args.mp_file)).replace('.npy', '.csv.gz')
+    businesses.to_csv(csv_name, index=False, compression='gzip')
