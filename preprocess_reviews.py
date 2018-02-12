@@ -18,6 +18,15 @@ MATCHES_FILE = 'dataset_processed/matches.pkl'
 Review = namedtuple('Review', ['user_id', 'business_id', 'stars'])
 
 
+def to_pickle_and_gz(df, fname):
+    df.to_pickle(fname)
+    # Get rid of byte strings
+    for column in df.columns:
+        if df[column].dtype.kind == 'S':
+            df[column] = df[column].astype(str)
+    df.to_csv(fname.replace('.pkl', '.csv.gz'), compression='gzip')
+
+
 def review_from_json_str(json_str):
     review_json = json.loads(json_str)
     return Review(review_json['user_id'],
@@ -75,7 +84,7 @@ if __name__ == '__main__':
     businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
     business_df.business_id = business_df.business_id.astype(np.character)
 
-    business_df.to_pickle(BUSINESSES_FILE)
+    to_pickle_and_gz(business_df, BUSINESSES_FILE)
 
     # Convert users and businesses into integer ids
     users_df = pd.DataFrame(list(all_users),
@@ -83,7 +92,7 @@ if __name__ == '__main__':
     # Make dict *before* coercing to bytes
     users_to_ids = dict(zip(users_df.user_id, users_df.index))
     users_df.user_id = users_df.user_id.astype(np.character)
-    users_df.to_pickle(USERS_FILE)
+    to_pickle_and_gz(users_df, USERS_FILE)
 
     review_matches = []
 
@@ -119,4 +128,4 @@ if __name__ == '__main__':
     matches_df.win = matches_df.win.astype(np.int8)
 
     print("Saving to file")
-    matches_df.to_pickle(MATCHES_FILE)
+    to_pickle_and_gz(matches_df, MATCHES_FILE)
