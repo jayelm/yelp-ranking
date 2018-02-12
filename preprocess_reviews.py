@@ -2,12 +2,13 @@
 Preprocess dataset/review.json
 """
 
-from collections import defaultdict, namedtuple
+from collections import defaultdict, namedtuple, Counter
 import json
 from tqdm import tqdm
 import itertools
 import pandas as pd
 import numpy as np
+from pycorenlp import StanfordCoreNLP
 
 REVIEW_FILE = 'dataset/review.json'
 
@@ -18,7 +19,15 @@ MATCHES_FILE = 'dataset_processed/matches.pkl'
 EDGELISTS_DRAWS = 'dataset_processed/matches_draws_edgelist.csv'
 EDGELISTS_NO_DRAWS = 'dataset_processed/matches_no_draws_edgelist.csv'
 
-Review = namedtuple('Review', ['user_id', 'business_id', 'stars'])
+SENTIMENTS = {
+    'very_positive': 4,
+    'positive': 3,
+    'negative': 2,
+    'very_negative': 1
+}
+SENTIMENTS_NLP_KEY = {k.replace('_', ' '): v for k, v in SENTIMENTS.items()}
+
+Review = namedtuple('Review', ['user_id', 'business_id', 'stars', 'sentiment'])
 
 
 def to_pickle_and_gz(df, fname, csv=False, gzip=False):
@@ -34,11 +43,35 @@ def to_pickle_and_gz(df, fname, csv=False, gzip=False):
                   compression='gzip' if gzip else None)
 
 
+def analyze_sentiment(text, nlp_=None):
+    if nlp_ is None:
+        try:
+            nlp_ = nlp
+        except NameError as e:
+            print("NLP not found")
+            raise e
+    res = nlp.annotate(
+        text,
+        properties={
+            'annotators': 'sentiment',
+            'outputFormat': 'json'
+        }
+    )
+    raise Exception("No document-level sentiment")
+    return SENTIMENTS_NLP_KEY[res['sentiment']]
+
+
 def review_from_json_str(json_str):
+    """
+    Create a review object from the JSON, performing sentiment analysis on the
+    text.
+    """
     review_json = json.loads(json_str)
+    sentiment = analyze_sentiment(review_json['text'])
     return Review(review_json['user_id'],
                   review_json['business_id'],
-                  review_json['stars'])
+                  review_json['stars'],
+                  sentiment)
 
 
 def file_len(fname):
@@ -54,6 +87,8 @@ if __name__ == '__main__':
     parser = ArgumentParser(
         description='Preprocess reviews',
         formatter_class=ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--corenlp_server', default='http://localhost:9000',
+                        help='URL to StanfordCoreNLP server')
 
     parser.add_argument('--csv', action='store_true',
                         help='Save .csv files')
@@ -67,9 +102,12 @@ if __name__ == '__main__':
     if args.csv_gzip and not args.csv:
         parser.error("Cannot specify --csv_gzip without --csv")
 
+    nlp = StanfordCoreNLP(args.corenlp_server)
+
     all_reviews = defaultdict(list)
     all_users = set()
     business_ratings = defaultdict(list)
+    business_sents = defaultdict(list)
 
     n_lines = file_len(REVIEW_FILE)
     print("{} reviews".format(n_lines))
@@ -81,22 +119,41 @@ if __name__ == '__main__':
             all_reviews[review.user_id].append(review)
             all_users.add(review.user_id)
             business_ratings[review.business_id].append(review.stars)
+            import ipdb; ipdb.set_trace()
+            business_sents[review.business_id].append(review.sentiment)
 
     print("{} users".format(len(all_users)))
     print("{} businesses".format(len(business_ratings.keys())))
 
     avg_business_records = [(b, sum(rs) / len(rs), len(rs))
                             for b, rs in business_ratings.items()]
+    avg_business_sents = [(b, sum(ss) / len(ss), len(ss))
+                          for b, ss in business_sents.items()]
     business_df = pd.DataFrame(
         avg_business_records,
         columns=['business_id', 'avg_rating', 'n_reviews'],
+    )
+    business_df['avg_sent'] = business_df.business_id.apply(
+        lambda bid: sum(business_sents[bid]) / len(business_sents[bid])
+    )
+    business_sents_counts = {k: Counter(v) for k, v in business_sents.items()}
+    for sent_level, i in SENTIMENTS.items():
+        business_df[sent_level] = business_df.business_id.apply(
+            lambda bid: business_sents_counts[bid][i]
+        )
+    business_df['avg_sent'] = business_df.business_id.apply(
+        lambda bid: sum(business_sents[bid]) / len(business_sents[bid])
     )
     # Smaller dtypes to save space
     assert business_df.n_reviews.min() > 0
     assert business_df.n_reviews.max() < np.iinfo(np.uint16).max
 
+    for sent_level in SENTIMENTS:
+        business_df[sent_level] = business_df[sent_level].astype(np.uint16)
+
     business_df.n_reviews = business_df.n_reviews.astype(np.uint16)
     business_df.avg_rating = business_df.avg_rating.astype(np.float32)
+    business_df.avg_sent = business_df.avg_sent.astype(np.float32)
     # Make dict *before* coercing to bytes
     businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
     business_df.business_id = business_df.business_id.astype(np.character)
