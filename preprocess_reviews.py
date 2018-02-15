@@ -15,8 +15,8 @@ USERS_FILE = 'dataset_processed/users.pkl'
 BUSINESSES_FILE = 'dataset_processed/businesses.pkl'
 MATCHES_FILE = 'dataset_processed/matches.pkl'
 
-EDGELISTS_DRAWS = 'dataset_processed/matches_draws.graph'
-EDGELISTS_NO_DRAWS = 'dataset_processed/matches_no_draws.graph'
+EDGELISTS_DRAWS = 'dataset_processed/matches_draws_edgelist.csv'
+EDGELISTS_NO_DRAWS = 'dataset_processed/matches_no_draws_edgelist.csv'
 
 Review = namedtuple('Review', ['user_id', 'business_id', 'stars'])
 
