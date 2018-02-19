@@ -43,7 +43,20 @@ def to_pickle_and_gz(df, fname, csv=False, gzip=False):
                   compression='gzip' if gzip else None)
 
 
-def analyze_sentiment(text, nlp_=None):
+def expectation(sentiment_distribution):
+    total = 0
+    for i, s in enumerate(sentiment_distribution):
+        total += i * s
+    return total
+
+
+def analyze_sentiment(text, nlp_=None, use_expectation=True):
+    """
+    Analyze sentiment with PyCoreNLP.
+
+    If expectation=True, then use the expectation of the sentiment
+    distribution, rather than the MAP estimate.
+    """
     if nlp_ is None:
         try:
             nlp_ = nlp
@@ -57,8 +70,17 @@ def analyze_sentiment(text, nlp_=None):
             'outputFormat': 'json'
         }
     )
-    raise Exception("No document-level sentiment")
-    return SENTIMENTS_NLP_KEY[res['sentiment']]
+    if isinstance(res, str):
+        raise Exception("Got string output: {}".format(res))
+    if use_expectation:
+        sent_vals = list(map(expectation, [x['sentimentDistribution']
+                                           for x in res['sentences']]))
+    else:
+        sent_vals = list(map(float, [x['sentimentValue']
+                                     for x in res['sentences']]))
+    mean_sent = sum(sent_vals) / len(sent_vals)
+    # Just get average sentiment
+    return mean_sent
 
 
 def review_from_json_str(json_str):
@@ -112,19 +134,32 @@ if __name__ == '__main__':
     n_lines = file_len(REVIEW_FILE)
     print("{} reviews".format(n_lines))
 
+    import multiprocessing as mp
+
     # Load reviews
+    print("Opening reviews")
     with open(REVIEW_FILE, 'r') as rf:
-        for line in tqdm(rf, total=n_lines, desc='Loading reviews'):
-            review = review_from_json_str(line)
-            all_reviews[review.user_id].append(review)
-            all_users.add(review.user_id)
-            business_ratings[review.business_id].append(review.stars)
-            import ipdb; ipdb.set_trace()
-            business_sents[review.business_id].append(review.sentiment)
+        rf_lines = list(rf)
+        #  for line in tqdm(rf, total=n_lines, desc='Loading reviews'):
+            #  review = review_from_json_str(line)
+            #  all_reviews[review.user_id].append(review)
+            #  all_users.add(review.user_id)
+            #  business_ratings[review.business_id].append(review.stars)
+            #  business_sents[review.business_id].append(review.sentiment)
+
+    print("Sentiment")
+    pool = mp.Pool(4)
+    reviews = pool.map(review_from_json_str, tqdm(rf_lines, total=n_lines, desc='Loading reviews'))
+    for review in reviews:
+        all_reviews[review.user_id].append(review)
+        all_users.add(review.user_id)
+        business_ratings[review.business_id].append(review.stars)
+        business_sents[review.business_id].append(review.sentiment)
 
     print("{} users".format(len(all_users)))
     print("{} businesses".format(len(business_ratings.keys())))
 
+    import ipdb; ipdb.set_trace()
     avg_business_records = [(b, sum(rs) / len(rs), len(rs))
                             for b, rs in business_ratings.items()]
     avg_business_sents = [(b, sum(ss) / len(ss), len(ss))
