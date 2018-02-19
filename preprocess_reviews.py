@@ -154,11 +154,14 @@ if __name__ == '__main__':
                      gzip=args.csv_gzip)
 
     if args.save_graphs:
+        matches_df = matches_df.rename(
+            columns={'b1': 'Source', 'b2': 'Target'}
+        )
         print("Saving edgelists")
         matches_df.drop(columns=['user', 'win']).to_csv(
             EDGELISTS_DRAWS, sep=' ',
-            header=False, index=False)
+            header=True, index=False)
         matches_df = matches_df[matches_df.win != 0]
         matches_df.drop(columns=['user', 'win']).to_csv(
             EDGELISTS_NO_DRAWS, sep=' ',
-            header=False, index=False)
+            header=True, index=False)
