@@ -26,14 +26,6 @@ MATCHES_FILE = 'dataset_processed/matches.pkl'
 EDGELISTS_DRAWS = 'dataset_processed/matches_draws_edgelist.csv'
 EDGELISTS_NO_DRAWS = 'dataset_processed/matches_no_draws_edgelist.csv'
 
-SENTIMENTS = {
-    'very_positive': 4,
-    'positive': 3,
-    'negative': 2,
-    'very_negative': 1
-}
-SENTIMENTS_NLP_KEY = {k.replace('_', ' '): v for k, v in SENTIMENTS.items()}
-
 Review = namedtuple('Review', ['user_id', 'business_id', 'stars', 'text', 'sentiment'])
 
 
