@@ -9,6 +9,13 @@ import itertools
 import pandas as pd
 import numpy as np
 from pycorenlp import StanfordCoreNLP
+import random
+import time
+import multiprocessing as mp
+
+N_CPU = 12
+
+random.seed(0)
 
 REVIEW_FILE = 'dataset/review.json'
 
@@ -27,7 +34,7 @@ SENTIMENTS = {
 }
 SENTIMENTS_NLP_KEY = {k.replace('_', ' '): v for k, v in SENTIMENTS.items()}
 
-Review = namedtuple('Review', ['user_id', 'business_id', 'stars', 'sentiment'])
+Review = namedtuple('Review', ['user_id', 'business_id', 'stars', 'text', 'sentiment'])
 
 
 def to_pickle_and_gz(df, fname, csv=False, gzip=False):
@@ -83,17 +90,30 @@ def analyze_sentiment(text, nlp_=None, use_expectation=True):
     return mean_sent
 
 
-def review_from_json_str(json_str):
+def review_from_json_str(json_str, sentiment=False):
     """
     Create a review object from the JSON, performing sentiment analysis on the
     text.
     """
     review_json = json.loads(json_str)
-    sentiment = analyze_sentiment(review_json['text'])
+    if sentiment:
+        sent = analyze_sentiment(review_json['text'])
+    else:
+        sent = None
     return Review(review_json['user_id'],
                   review_json['business_id'],
                   review_json['stars'],
-                  sentiment)
+                  review_json['text'],
+                  sent)
+
+def add_sentiment(review):
+    return Review(
+        review.user_id,
+        review.business_id,
+        review.stars,
+        review.text,
+        analyze_sentiment(review.text)
+    )
 
 
 def file_len(fname):
@@ -134,8 +154,6 @@ if __name__ == '__main__':
     n_lines = file_len(REVIEW_FILE)
     print("{} reviews".format(n_lines))
 
-    import multiprocessing as mp
-
     # Load reviews
     print("Opening reviews")
     with open(REVIEW_FILE, 'r') as rf:
@@ -147,48 +165,70 @@ if __name__ == '__main__':
             #  business_ratings[review.business_id].append(review.stars)
             #  business_sents[review.business_id].append(review.sentiment)
 
-    print("Sentiment")
-    pool = mp.Pool(4)
-    reviews = pool.map(review_from_json_str, tqdm(rf_lines, total=n_lines, desc='Loading reviews'))
+    # Load reviews and sample chosen reviews
+    b = pd.read_pickle('dataset_processed/businesses.pkl')
+    chosen = set(random.sample(list(map(lambda x: x.decode('utf8'), b.business_id)), 10000))
+
+    # Generate review_objs, without sentiment
+    pool = mp.Pool(N_CPU)
+    review_objs = pool.map(review_from_json_str, tqdm(rf_lines, total=n_lines, desc='Loading reviews'))
+    pool.close()
+    pool.join()
+
+    # Perform sentiment analyss on a couple of those reviews
+    yes_sentiment = []
+    no_sentiment = []
+    for review in review_objs:
+        if review.business_id in chosen:
+            yes_sentiment.append(review)
+        else:
+            no_sentiment.append(review)
+
+    pool = mp.Pool(N_CPU)
+    start = time.time()
+    yes_sentiment_added = pool.map(add_sentiment, tqdm(yes_sentiment, desc='Sentiment analysis'))
+    print("Elapsed time: {}".format(time.time() - start))
+
+    reviews = yes_sentiment_added + no_sentiment
+
     for review in reviews:
         all_reviews[review.user_id].append(review)
         all_users.add(review.user_id)
         business_ratings[review.business_id].append(review.stars)
-        business_sents[review.business_id].append(review.sentiment)
+        if review.sentiment is not None:
+            business_sents[review.business_id].append(review.sentiment)
 
     print("{} users".format(len(all_users)))
     print("{} businesses".format(len(business_ratings.keys())))
 
-    import ipdb; ipdb.set_trace()
     avg_business_records = [(b, sum(rs) / len(rs), len(rs))
                             for b, rs in business_ratings.items()]
-    avg_business_sents = [(b, sum(ss) / len(ss), len(ss))
-                          for b, ss in business_sents.items()]
     business_df = pd.DataFrame(
         avg_business_records,
         columns=['business_id', 'avg_rating', 'n_reviews'],
     )
-    business_df['avg_sent'] = business_df.business_id.apply(
-        lambda bid: sum(business_sents[bid]) / len(business_sents[bid])
-    )
-    business_sents_counts = {k: Counter(v) for k, v in business_sents.items()}
-    for sent_level, i in SENTIMENTS.items():
-        business_df[sent_level] = business_df.business_id.apply(
-            lambda bid: business_sents_counts[bid][i]
-        )
-    business_df['avg_sent'] = business_df.business_id.apply(
-        lambda bid: sum(business_sents[bid]) / len(business_sents[bid])
-    )
+    def maybe_business_sent(bid):
+        if bid in business_sents:
+            return sum(business_sents[bid]) / len(business_sents[bid])
+        else:
+            return None
+    def maybe_var(bid):
+        if bid in business_sents:
+            return np.var(business_sents[bid])
+        else:
+            return None
+    import ipdb; ipdb.set_trace()
+    business_df['avg_sent'] = business_df.business_id.apply(maybe_business_sent)
+    business_df['sent_var'] = business_df.business_id.apply(maybe_var)
+
     # Smaller dtypes to save space
     assert business_df.n_reviews.min() > 0
     assert business_df.n_reviews.max() < np.iinfo(np.uint16).max
 
-    for sent_level in SENTIMENTS:
-        business_df[sent_level] = business_df[sent_level].astype(np.uint16)
-
     business_df.n_reviews = business_df.n_reviews.astype(np.uint16)
     business_df.avg_rating = business_df.avg_rating.astype(np.float32)
     business_df.avg_sent = business_df.avg_sent.astype(np.float32)
+    business_df.sent_var = business_df.sent_var.astype(np.float32)
     # Make dict *before* coercing to bytes
     businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
     business_df.business_id = business_df.business_id.astype(np.character)
