@@ -204,6 +204,7 @@ if __name__ == '__main__':
 
     avg_business_records = [(b, sum(rs) / len(rs), len(rs))
                             for b, rs in business_ratings.items()]
+    avg_business_records = sorted(avg_business_records, key=lambda x: x[0])
     business_df = pd.DataFrame(
         avg_business_records,
         columns=['business_id', 'avg_rating', 'n_reviews'],
@@ -239,7 +240,7 @@ if __name__ == '__main__':
                      gzip=args.csv_gzip)
 
     # Convert users and businesses into integer ids
-    users_df = pd.DataFrame(list(all_users),
+    users_df = pd.DataFrame(sorted(list(all_users)),
                             columns=['user_id'])
     # Make dict *before* coercing to bytes
     users_to_ids = dict(zip(users_df.user_id, users_df.index))
