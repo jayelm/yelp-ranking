@@ -260,8 +260,12 @@ if __name__ == '__main__':
 
     review_matches = []
 
-    for user, user_reviews in tqdm(all_reviews.items(),
-                                   total=len(all_reviews.keys()),
+    # Ensure we loop through users sorted
+    all_reviews_sorted = sorted(list(all_reviews.items()),
+                                key=lambda x: x[0])
+    # Order of user reviews is deterministic since that's added in-order via
+    # traversal of the json
+    for user, user_reviews in tqdm(all_reviews_sorted,
                                    desc="Creating matches"):
         uid = users_to_ids[user]
         review_tuples = [(businesses_to_ids[r.business_id], r.stars)
