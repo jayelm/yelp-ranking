@@ -177,6 +177,7 @@ if __name__ == '__main__':
     # Choose a random sample of businesses
     chosen = random.sample(all_businesses, 10000)
     assert len(set(chosen)) == len(chosen)
+    chosen = set(chosen)
 
     # Perform sentiment analyss on a couple of those reviews
     yes_sentiment = []
