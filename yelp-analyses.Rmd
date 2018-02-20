@@ -25,26 +25,3 @@ ggplot(bs, aes(x = ts_rating, y = star_rating)) +
   xlab('TrueSkill Rating') +
   ylab('Star Rating')
 ```
-
-TODO: User IDs don't start at 0! Verify that that's okay? Could be that users
-have only reviewed one business
-
-TODO: Something like...what about matches where it's just an average of people's
-votes, instead of user votes
-
-```{r}
-# NOTE: This takes a lot of time/memory
-ms_graph = fread('dataset_processed/matches.csv') %>%
-  tbl_df %>%
-  filter(win != 0) %>%
-  select(b1, b2) %>%
-  as.matrix
-ms_graph = ms_graph + 1
-ms_graph = graph_from_edgelist(ms_graph, directed = FALSE)
-```
-
-```{r}
-png('graph.png', 2000, 2000)
-plot(ms_graph)
-dev.off()
-```
