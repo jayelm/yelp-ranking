@@ -149,6 +149,7 @@ if __name__ == '__main__':
 
     all_reviews = defaultdict(list)
     all_users = set()
+    all_businesses = set()
     business_ratings = defaultdict(list)
     business_sents = defaultdict(list)
 
@@ -159,22 +160,23 @@ if __name__ == '__main__':
     print("Opening reviews")
     with open(REVIEW_FILE, 'r') as rf:
         rf_lines = list(rf)
-        #  for line in tqdm(rf, total=n_lines, desc='Loading reviews'):
-            #  review = review_from_json_str(line)
-            #  all_reviews[review.user_id].append(review)
-            #  all_users.add(review.user_id)
-            #  business_ratings[review.business_id].append(review.stars)
-            #  business_sents[review.business_id].append(review.sentiment)
-
-    # Load reviews and sample chosen reviews
-    b = pd.read_pickle('dataset_processed/businesses.pkl')
-    chosen = set(random.sample(list(map(lambda x: x.decode('utf8'), b.business_id)), 10000))
 
     # Generate review_objs, without sentiment
     pool = mp.Pool(N_CPU)
-    review_objs = pool.map(review_from_json_str, tqdm(rf_lines, total=n_lines, desc='Loading reviews'))
+    review_objs = pool.map(
+        review_from_json_str,
+        tqdm(rf_lines, total=n_lines, desc='Loading reviews'))
     pool.close()
     pool.join()
+
+    # Collect businesses
+    for review in review_objs:
+        all_businesses.add(review.business_id)
+    all_businesses = list(all_businesses)
+
+    # Choose a random sample of businesses
+    chosen = random.sample(all_businesses, 10000)
+    assert len(set(chosen)) == len(chosen)
 
     # Perform sentiment analyss on a couple of those reviews
     yes_sentiment = []
@@ -187,7 +189,9 @@ if __name__ == '__main__':
 
     pool = mp.Pool(N_CPU)
     start = time.time()
-    yes_sentiment_added = pool.map(add_sentiment, tqdm(yes_sentiment, desc='Sentiment analysis'))
+    yes_sentiment_added = pool.map(
+        add_sentiment,
+        tqdm(yes_sentiment, desc='Sentiment analysis'))
     print("Elapsed time: {}".format(time.time() - start))
 
     reviews = yes_sentiment_added + no_sentiment
@@ -209,19 +213,23 @@ if __name__ == '__main__':
         avg_business_records,
         columns=['business_id', 'avg_rating', 'n_reviews'],
     )
+
     def maybe_business_sent(bid):
         if bid in business_sents:
             return sum(business_sents[bid]) / len(business_sents[bid])
         else:
             return None
+
     def maybe_var(bid):
         if bid in business_sents:
             return np.var(business_sents[bid])
         else:
             return None
-    import ipdb; ipdb.set_trace()
-    business_df['avg_sent'] = business_df.business_id.apply(maybe_business_sent)
-    business_df['sent_var'] = business_df.business_id.apply(maybe_var)
+
+    business_df['avg_sent'] = business_df.business_id.apply(
+        maybe_business_sent)
+    business_df['sent_var'] = business_df.business_id.apply(
+        maybe_var)
 
     # Smaller dtypes to save space
     assert business_df.n_reviews.min() > 0
