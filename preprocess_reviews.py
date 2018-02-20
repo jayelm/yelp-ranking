@@ -62,15 +62,24 @@ def analyze_sentiment(text, nlp_=None, use_expectation=True):
         except NameError as e:
             print("NLP not found")
             raise e
-    res = nlp.annotate(
-        text,
-        properties={
-            'annotators': 'sentiment',
-            'outputFormat': 'json'
-        }
-    )
-    if isinstance(res, str):
-        raise Exception("Got string output: {}".format(res))
+    res = ''
+    attempts = 0
+    while isinstance(res, str):
+        attempts += 1
+        if res != '':  # ( and res is a str)
+            if attempts >= 3:
+                print("Too many attempts for {}, returning mean sentiment".format(text[:50]))
+                # Return neutral sentiment
+                return 2.0
+            print("Got timeout: {}... [retrying in 5s]".format(text[:50]))
+            time.sleep(5)
+        res = nlp.annotate(
+            text,
+            properties={
+                'annotators': 'sentiment',
+                'outputFormat': 'json'
+            }
+        )
     if use_expectation:
         sent_vals = list(map(expectation, [x['sentimentDistribution']
                                            for x in res['sentences']]))
