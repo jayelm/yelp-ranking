@@ -15,7 +15,23 @@ USERS_FILE = 'dataset_processed/users.pkl'
 BUSINESSES_FILE = 'dataset_processed/businesses.pkl'
 MATCHES_FILE = 'dataset_processed/matches.pkl'
 
+EDGELISTS_DRAWS = 'dataset_processed/matches_draws_edgelist.csv'
+EDGELISTS_NO_DRAWS = 'dataset_processed/matches_no_draws_edgelist.csv'
+
 Review = namedtuple('Review', ['user_id', 'business_id', 'stars'])
+
+
+def to_pickle_and_gz(df, fname, csv=False, gzip=False):
+    if gzip and not csv:
+        raise ValueError("Cannot set gzip without csv=True")
+    df.to_pickle(fname)
+    if csv:
+        # Get rid of byte strings
+        for column in df.columns:
+            if df[column].dtype.kind == 'S':
+                df[column] = df[column].astype(str)
+        df.to_csv(fname.replace('.pkl', '.csv.gz'),
+                  compression='gzip' if gzip else None)
 
 
 def review_from_json_str(json_str):
@@ -39,7 +55,17 @@ if __name__ == '__main__':
         description='Preprocess reviews',
         formatter_class=ArgumentDefaultsHelpFormatter)
 
+    parser.add_argument('--csv', action='store_true',
+                        help='Save .csv files')
+    parser.add_argument('--csv_gzip', action='store_true',
+                        help='Gzipped .csv files (takes a while)')
+    parser.add_argument('--save_graphs', action='store_true',
+                        help='Save graph edgelists')
+
     args = parser.parse_args()
+
+    if args.csv_gzip and not args.csv:
+        parser.error("Cannot specify --csv_gzip without --csv")
 
     all_reviews = defaultdict(list)
     all_users = set()
@@ -75,7 +101,9 @@ if __name__ == '__main__':
     businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
     business_df.business_id = business_df.business_id.astype(np.character)
 
-    business_df.to_pickle(BUSINESSES_FILE)
+    to_pickle_and_gz(business_df, BUSINESSES_FILE,
+                     csv=args.csv,
+                     gzip=args.csv_gzip)
 
     # Convert users and businesses into integer ids
     users_df = pd.DataFrame(list(all_users),
@@ -83,7 +111,9 @@ if __name__ == '__main__':
     # Make dict *before* coercing to bytes
     users_to_ids = dict(zip(users_df.user_id, users_df.index))
     users_df.user_id = users_df.user_id.astype(np.character)
-    users_df.to_pickle(USERS_FILE)
+    to_pickle_and_gz(users_df, USERS_FILE,
+                     csv=args.csv,
+                     gzip=args.csv_gzip)
 
     review_matches = []
 
@@ -119,4 +149,19 @@ if __name__ == '__main__':
     matches_df.win = matches_df.win.astype(np.int8)
 
     print("Saving to file")
-    matches_df.to_pickle(MATCHES_FILE)
+    to_pickle_and_gz(matches_df, MATCHES_FILE,
+                     csv=args.csv,
+                     gzip=args.csv_gzip)
+
+    if args.save_graphs:
+        matches_df = matches_df.rename(
+            columns={'b1': 'Source', 'b2': 'Target'}
+        )
+        print("Saving edgelists")
+        matches_df.drop(columns=['user', 'win']).to_csv(
+            EDGELISTS_DRAWS, sep=' ',
+            header=True, index=False)
+        matches_df = matches_df[matches_df.win != 0]
+        matches_df.drop(columns=['user', 'win']).to_csv(
+            EDGELISTS_NO_DRAWS, sep=' ',
+            header=True, index=False)
