@@ -6,10 +6,6 @@ from scipy.stats import norm
 import numpy as np
 from preprocess_reviews import BUSINESSES_FILE, MATCHES_FILE
 from tqdm import tqdm, trange
-
-import traceback
-import ctypes
-import multiprocessing as mp
 from collections import namedtuple
 
 
@@ -46,62 +42,6 @@ def Lambdadraw(x, e):
             (cdf(e - x) - cdf(-e - x))
         )
     )
-
-
-def shared_array(N):
-    """
-    Form a shared memory numpy array.
-
-    http://stackoverflow.com/questions/5549190/is-shared-readonly-data-copied-to-different-processes-for-python-multiprocessing
-    """
-    shared_array_base = mp.Array(ctypes.c_double, N)
-    shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
-    return shared_array
-
-
-def shared_array_2d(shape):
-    """
-    Form a shared memory numpy array.
-
-    http://stackoverflow.com/questions/5549190/is-shared-readonly-data-copied-to-different-processes-for-python-multiprocessing
-    """
-    shared_array_base = mp.Array(ctypes.c_double, shape[0] * shape[1])
-    shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
-    shared_array = shared_array.reshape(*shape)
-    return shared_array
-
-
-def incr_p_and_mu(mpargs):
-    """
-    Function that operates on shared memory.
-    """
-    try:
-        # Modify ps
-        p_gs_j_0 = mpargs.p_gs[mpargs.j, 0]
-        p_gs_j_1 = mpargs.p_gs[mpargs.j, 1]
-        lock_p.acquire()
-        mpargs.p_s[mpargs.winner] += p_gs_j_0
-        mpargs.p_s[mpargs.loser] += p_gs_j_1
-        lock_p.release()
-
-        # Modify mus
-        mu_gs_j_0 = mpargs.mu_gs[mpargs.j, 0]
-        mu_gs_j_1 = mpargs.mu_gs[mpargs.j, 1]
-        lock_mu.acquire()
-        mpargs.mu_s[mpargs.winner] += mu_gs_j_0 * p_gs_j_0
-        mpargs.mu_s[mpargs.loser] += mu_gs_j_1 * p_gs_j_1
-        lock_mu.release()
-    except Exception as e:
-        print("Caught exception")
-        traceback.print_exc()
-        print()
-        raise e
-
-
-def init_locks(lp, lmu):
-    global lock_p, lock_mu
-    lock_p = lp
-    lock_mu = lmu
 
 
 def draw_p_to_eps(p):
@@ -187,8 +127,8 @@ def gaussian_ep(M, n_players, D, fast_m_acc=False,
 
 
 def convert_matches_format(matches):
-    if np.any(matches.win == 0):
-        print("Warning: draws in matches df, don't know what to do")
+    # Order doesn't matter for draws
+    # TODO: Assert this is the case by deliberately switching the order around
     matches['b1_temp'] = np.where(matches.win == 1, matches.b1, matches.b2)
     matches['b2_temp'] = np.where(matches.win == 1, matches.b2, matches.b1)
     matches['b1'], matches['b2'] = matches['b1_temp'], matches['b2_temp']
@@ -208,7 +148,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--save',
-        default='results/mp_{draw}draws_{num_samples}.npy',
+        default='results/mp_{num_samples}.npy',
         type=str,
         help='Where to save')
 
@@ -216,13 +156,6 @@ if __name__ == '__main__':
         '--fast_m_acc',
         action='store_true',
         help='Use cython-optimized accumulator')
-
-    parser.add_argument(
-        '--draw',
-        type=str,
-        default='drop',
-        choices=['drop', 'double'],
-        help='How to handle draws')
 
     args = parser.parse_args()
 
@@ -239,31 +172,18 @@ if __name__ == '__main__':
     businesses = pd.read_pickle(BUSINESSES_FILE)
     n_businesses = businesses.shape[0]
 
-    if args.draw == 'drop':
-        print("Dropping draws")
-        matches = matches[matches.win != 0]
-        matches = convert_matches_format(matches)
-    elif args.draw == 'double':
-        print("Doubling draw games")
-        # Isolate draws, make draws double matches, where both teams win
-        non_draws = matches[matches.win != 0]
-        non_draws = convert_matches_format(non_draws)
-        draws = matches[matches.win == 0].drop(columns=['user', 'win'])
-        draws_copy = draws.copy()
-        # Reverse draws copy
-        draws_copy.b2, draws_copy.b1 = draws_copy.b1, draws_copy.b2
+    # Get draws as boolean array
+    draws = matches.win == 0
 
-        matches = pd.concat([non_draws, draws, draws_copy])
-    else:
-        raise NotImplementedError
-
-    assert list(matches.columns) == ['b1', 'b2'], "Matches in wrong format"
-    matches = matches.as_matrix()
+    matches = convert_matches_format(matches).as_matrix()
 
     print("Running message passing")
     mp_samples = np.zeros((args.num_samples, 2, n_businesses))
 
-    gep = gaussian_ep(matches, n_businesses, fast_m_acc=args.fast_m_acc)
+    gep = gaussian_ep(matches, n_businesses, draws,
+                      fast_m_acc=args.fast_m_acc,
+                      # Use empirical draw probability
+                      draw_p=draws.mean())
     gep_with_progress = zip(
         trange(args.num_samples, desc='MP'), gep)
     for it, mean_and_stdev in gep_with_progress:
