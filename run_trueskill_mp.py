@@ -2,7 +2,7 @@
 """
 
 import pandas as pd
-import scipy.stats
+from scipy.stats import norm
 import numpy as np
 from preprocess_reviews import BUSINESSES_FILE, MATCHES_FILE
 from tqdm import tqdm, trange
@@ -13,17 +13,39 @@ import multiprocessing as mp
 from collections import namedtuple
 
 
+# Aliases
+pdf = norm.pdf
+cdf = norm.cdf
+ppf = norm.ppf
+
 MPArgs = namedtuple('MPArgs', ['mu_s', 'p_s',
                                'winner', 'loser', 'j',
                                'p_gs', 'mu_gs'])
 
 
-def psi(x):
-    return scipy.stats.norm.pdf(x) / scipy.stats.norm.cdf(x)
+def psi(x, e):
+    return pdf(x - e) / cdf(x - e)
 
 
-def Lambda(x):
-    return psi(x) * (psi(x) + x)
+def psidraw(x, e):
+    return (
+        (pdf(-e - x) - pdf(e - x)) /
+        (cdf(e - x) - cdf(-e - x))
+    )
+
+
+def Lambda(x, e):
+    return psi(x, e) * (psi(x, e) + (x - e))
+
+
+def Lambdadraw(x, e):
+    return (
+        psidraw(x, e) ** 2 +
+        (
+            ((e - x) * pdf(e - x) + (e + x) * pdf(e + x)) /
+            (cdf(e - x) - cdf(-e - x))
+        )
+    )
 
 
 def shared_array(N):
@@ -131,8 +153,21 @@ def gaussian_ep_mp(M, n_players, n_cpu=2):
         mu_gt = mu_sg[:, 0] - mu_sg[:, 1]
 
         # 4. Approximate the marginal on performance differences
-        mu_t = mu_gt + sigma_gt * psi(mu_gt / sigma_gt)
-        p_t = 1 / v_gt / (1 - Lambda(mu_gt / sigma_gt))
+        eps = epsilon * (1 / sigma_gt)
+        # Depending on draws, compute different scores
+        mu_update = np.where(
+            D,
+            psidraw(mu_gt / sigma_gt, eps),
+            psi(mu_gt / sigma_gt, eps)
+        )
+        mu_t = mu_gt + sigma_gt * mu_update
+
+        p_update = np.where(
+            D,
+            Lambdadraw(mu_gt / sigma_gt, eps),
+            Lambda(mu_gt / sigma_gt, eps)
+        )
+        p_t = 1 / v_gt / (1 - p_update)
 
         # 5. Compute performance -> game messages
         p_tg = p_t - 1 / v_gt
@@ -151,9 +186,19 @@ def gaussian_ep_mp(M, n_players, n_cpu=2):
         yield (mu_s, np.sqrt(1 / p_s))
 
 
-def gaussian_ep(M, n_players, fast_m_acc=False):
+def draw_p_to_eps(p):
+    """
+    Draw probability to epsilon draw value
+    """
+    return ppf((p + 1.0) / 2)
+
+
+def gaussian_ep(M, n_players, D, fast_m_acc=False,
+                draw_p=0.1):
+    assert D.shape[0] == M.shape[0]
     N = len(M)
     it = 0
+    epsilon = draw_p_to_eps(draw_p)
 
     mu_s, p_s = np.empty(n_players), np.empty(n_players)
     mu_gs, p_gs = np.zeros((N, 2)), np.zeros((N, 2))
@@ -190,8 +235,21 @@ def gaussian_ep(M, n_players, fast_m_acc=False):
         mu_gt = mu_sg[:, 0] - mu_sg[:, 1]
 
         # 4. Approximate the marginal on performance differences
-        mu_t = mu_gt + sigma_gt * psi(mu_gt / sigma_gt)
-        p_t = 1 / v_gt / (1 - Lambda(mu_gt / sigma_gt))
+        eps = epsilon * (1 / sigma_gt)
+        # Depending on draws, compute different scores
+        mu_update = np.where(
+            D,
+            psidraw(mu_gt / sigma_gt, eps),
+            psi(mu_gt / sigma_gt, eps)
+        )
+        mu_t = mu_gt + sigma_gt * mu_update
+
+        p_update = np.where(
+            D,
+            Lambdadraw(mu_gt / sigma_gt, eps),
+            Lambda(mu_gt / sigma_gt, eps)
+        )
+        p_t = 1 / v_gt / (1 - p_update)
 
         # 5. Compute performance -> game messages
         p_tg = p_t - 1 / v_gt
