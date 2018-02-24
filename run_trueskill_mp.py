@@ -58,15 +58,15 @@ def gaussian_ep(M, n_players, D, fast_m_acc=False,
     it = 0
     epsilon = draw_p_to_eps(draw_p)
 
-    mu_s, p_s = np.empty(n_players), np.empty(n_players)
-    mu_gs, p_gs = np.zeros((N, 2)), np.zeros((N, 2))
-    mu_sg, p_sg = np.empty((N, 2)), np.empty((N, 2))
+    mu_s, p_s = np.empty(n_players, dtype=np.float32), np.empty(n_players, dtype=np.float32)
+    mu_gs, p_gs = np.zeros((N, 2), dtype=np.float32), np.zeros((N, 2), dtype=np.float32)
+    mu_sg, p_sg = np.empty((N, 2), dtype=np.float32), np.empty((N, 2), dtype=np.float32)
 
     while True:
         # 1. Compute marginal skills
         # Let skills be N(mu_s, 1/p_s)
-        p_s = np.ones(n_players) * 1 / 0.5
-        mu_s = np.zeros(n_players)
+        p_s = np.ones(n_players, dtype=np.float32) * 1 / 0.5
+        mu_s = np.zeros(n_players, dtype=np.float32)
 
         if fast_m_acc:
             fma.fast_m_acc(M, p_s, mu_s, p_gs, mu_gs, N)

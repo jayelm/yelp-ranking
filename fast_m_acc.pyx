@@ -13,8 +13,8 @@ DTYPE = np.uint32
 ctypedef np.uint32_t DTYPE_t
 
 # Type used for floating
-FTYPE = np.float64
-ctypedef np.float64_t FTYPE_t
+FTYPE = np.float32
+ctypedef np.float32_t FTYPE_t
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
