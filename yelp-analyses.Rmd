@@ -5,7 +5,7 @@ date: "2/12/2018"
 output: html_document
 ---
 
-```{r setup, includ:=FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(cowplot)
@@ -15,13 +15,59 @@ library(data.table)
 ```
 
 ```{r}
-bs = read.csv('results/businesses_mp_dropdraws_20.csv') %>%
+bs = read.csv('results/businesses_mp_10.csv') %>%
   tbl_df
 ```
 
-```{r}
-ggplot(bs, aes(x = ts_rating, y = star_rating)) +
+```{r, warning=FALSE}
+p = ggplot(bs, aes(x = ts_rating, y = star_rating)) +
   geom_point(alpha = 0.05) +
   xlab('TrueSkill Rating') +
   ylab('Star Rating')
+
+x_marginal = axis_canvas(p, axis = "x") +
+  geom_histogram(data = bs, aes(x = ts_rating))
+y_marginal = axis_canvas(p, axis = "y", coord_flip = TRUE) +
+  geom_histogram(data = bs, aes(x = star_rating)) +
+  coord_flip()
+
+p %>%
+  insert_xaxis_grob(x_marginal, grid::unit(0.75, "in"), position = "top") %>%
+  insert_yaxis_grob(y_marginal, grid::unit(0.75, "in"), position = "right") %>%
+  ggdraw
+```
+
+## Sentiment analysis
+
+```{r}
+bs_sent = bs %>% na.omit
+
+bs_long = bs_sent %>%
+  rename(`Star` = star_rating, `TrueSkill` = ts_rating) %>%
+  gather(type, rating, `Star`, `TrueSkill`)
+
+bs_long_corrs = bs_long %>%
+  group_by(type) %>%
+  summarise(r = cor(rating, avg_sent)) %>%
+  mutate(x = c(4, 1))
+
+ggplot(bs_long, aes(x = rating, y = avg_sent)) +
+  geom_point(alpha = 0.05) +
+  geom_smooth(method = 'lm', se = FALSE) +
+  geom_text(data = bs_long_corrs,
+            mapping = aes(x = x, y = 1, label = paste0('r = ', round(r, 2)))) +
+  facet_wrap(~ type, scales = 'free_x') +
+  xlab('Rating') +
+  ylab('Sentiment')
+```
+
+Correlation test
+
+```{r}
+psych::paired.r(
+  xy = cor(bs_sent$avg_sent, bs_sent$ts_rating),
+  xz = cor(bs_sent$avg_sent, bs_sent$star_rating),
+  yz = cor(bs_sent$ts_rating, bs_sent$star_rating),
+  n = nrow(bs_sent)
+)
 ```

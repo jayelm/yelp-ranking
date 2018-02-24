@@ -24,8 +24,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    BUSINESSES_FILE
-
     businesses = pd.read_pickle(BUSINESSES_FILE)
     matches = pd.read_pickle(MATCHES_FILE)
     # Drop draws, for now
