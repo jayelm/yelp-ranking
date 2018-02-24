@@ -49,13 +49,14 @@ bs_long = bs_sent %>%
 bs_long_corrs = bs_long %>%
   group_by(type) %>%
   summarise(r = cor(rating, avg_sent)) %>%
-  mutate(x = c(4, 1))
+  mutate(x = c(4.5, 1.45))
 
 ggplot(bs_long, aes(x = rating, y = avg_sent)) +
   geom_point(alpha = 0.05) +
   geom_smooth(method = 'lm', se = FALSE) +
   geom_text(data = bs_long_corrs,
-            mapping = aes(x = x, y = 1, label = paste0('r = ', round(r, 2)))) +
+            mapping = aes(x = x, y = 1, label = paste0('italic(\'r\')==', round(r, 2))),
+            parse=TRUE) +
   facet_wrap(~ type, scales = 'free_x') +
   xlab('Rating') +
   ylab('Sentiment')
