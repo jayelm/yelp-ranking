@@ -159,7 +159,11 @@ if __name__ == '__main__':
         )
         # Merge with original df
         bdf_split = business_df.merge(split_ratings,
+                                      how='left',
                                       on='business_id')
+        # Leave avg rating NAs alone, since what to do in that case depends on
+        # model. (One easy way is just to impute with mean)
+        bdf_split.n_reviews = bdf_split.n_reviews.fillna(0.0)
         print("{} reviews in train split (total: {})".format(
             sum(bdf_split.n_reviews),
             sum(len(v) for v in all_reviews.values()))
