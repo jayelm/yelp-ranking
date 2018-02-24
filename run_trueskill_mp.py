@@ -104,88 +104,6 @@ def init_locks(lp, lmu):
     lock_mu = lmu
 
 
-def gaussian_ep_mp(M, n_players, n_cpu=2):
-    print("Warning: this doesn't work")
-    N = len(M)
-    it = 0
-
-    # Shared arrays for multiprocessing
-    mu_s = shared_array(n_players)
-    p_s = shared_array(n_players)
-
-    # Multiprocessing setup
-    mu_sg, p_sg = np.empty((N, 2)), np.empty((N, 2))
-
-    p_gs = shared_array_2d((N, 2))
-    mu_gs = shared_array_2d((N, 2))
-
-    while True:
-        # 1. Compute marginal skills
-        # Let skills be N(mu_s, 1/p_s)
-        p_s[:] = np.ones(n_players) * 1 / 0.5
-        mu_s[:] = np.zeros(n_players)
-        mpargs_generator = (
-            MPArgs(mu_s, p_s,
-                   winner, loser, j,
-                   p_gs, mu_gs)
-            for j, (winner, loser)
-            in enumerate(M))
-
-        lock_p = mp.Lock()
-        lock_mu = mp.Lock()
-        pool = mp.Pool(n_cpu, initializer=init_locks,
-                       initargs=(lock_p, lock_mu))
-        pool.map(incr_p_and_mu, mpargs_generator, chunksize=1000)
-        pool.close()
-        pool.join()
-
-        mu_s[:] = mu_s / p_s
-
-        # 2. Compute skill -> game messages
-        # winner's skill -> game: N(mu_sg[,0], 1/p_sg[,0])
-        # loser's skill -> game: N(mu_sg[,1], 1/p_sg[,1])
-        p_sg = p_s[M] - p_gs
-        mu_sg = (p_s[M] * mu_s[M] - p_gs * mu_gs) / p_sg
-
-        # 3. Compute game -> performance messages
-        v_gt = 1 + np.sum(1 / p_sg, 1)
-        sigma_gt = np.sqrt(v_gt)
-        mu_gt = mu_sg[:, 0] - mu_sg[:, 1]
-
-        # 4. Approximate the marginal on performance differences
-        eps = epsilon * (1 / sigma_gt)
-        # Depending on draws, compute different scores
-        mu_update = np.where(
-            D,
-            psidraw(mu_gt / sigma_gt, eps),
-            psi(mu_gt / sigma_gt, eps)
-        )
-        mu_t = mu_gt + sigma_gt * mu_update
-
-        p_update = np.where(
-            D,
-            Lambdadraw(mu_gt / sigma_gt, eps),
-            Lambda(mu_gt / sigma_gt, eps)
-        )
-        p_t = 1 / v_gt / (1 - p_update)
-
-        # 5. Compute performance -> game messages
-        p_tg = p_t - 1 / v_gt
-        mu_tg = (mu_t * p_t - mu_gt / v_gt) / p_tg
-
-        # 6. Compute game -> skills messages
-        # game -> winner's skill: N(mu_gs[,0], 1/p_gs[,0])
-        # game -> loser's skill: N(mu_gs[,1], 1/p_gs[,1])
-        p_gs[:, 0] = 1 / (1 + 1 / p_tg + 1 / p_sg[:, 1])  # winners
-        p_gs[:, 1] = 1 / (1 + 1 / p_tg + 1 / p_sg[:, 0])  # losers
-        mu_gs[:, 0] = mu_sg[:, 1] + mu_tg
-        mu_gs[:, 1] = mu_sg[:, 0] - mu_tg
-
-        it += 1
-
-        yield (mu_s, np.sqrt(1 / p_s))
-
-
 def draw_p_to_eps(p):
     """
     Draw probability to epsilon draw value
@@ -288,9 +206,6 @@ if __name__ == '__main__':
     parser.add_argument('--num_samples', default=10, type=int,
                         help='Number of message passing samples')
 
-    parser.add_argument('--n_cpu', default=1, type=int,
-                        help='Number of CPUS (> 1 enables multiprocessing)')
-
     parser.add_argument(
         '--save',
         default='results/mp_{draw}draws_{num_samples}.npy',
@@ -348,11 +263,7 @@ if __name__ == '__main__':
     print("Running message passing")
     mp_samples = np.zeros((args.num_samples, 2, n_businesses))
 
-    if args.n_cpu > 1:
-        gep = gaussian_ep_mp(matches, n_businesses, args.n_cpu)
-    else:
-        gep = gaussian_ep(matches, n_businesses,
-                          fast_m_acc=args.fast_m_acc)
+    gep = gaussian_ep(matches, n_businesses, fast_m_acc=args.fast_m_acc)
     gep_with_progress = zip(
         trange(args.num_samples, desc='MP'), gep)
     for it, mean_and_stdev in gep_with_progress:
