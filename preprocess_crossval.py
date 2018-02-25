@@ -22,6 +22,7 @@ REVIEW_FILE = 'dataset/review.json'
 USERS_FILE = 'dataset_processed/users.pkl.mp'
 BUSINESSES_FILE = 'dataset_processed/businesses.pkl'
 MATCHES_FILE = 'dataset_processed/matches.pkl'
+REVIEWS_FILE = 'dataset_processed/reviews.pkl'
 
 Review = namedtuple(
     'Review',
@@ -192,6 +193,35 @@ if __name__ == '__main__':
 
         for phase, phase_reviews in [('train', train_reviews),
                                      ('test', test_reviews)]:
+            # Create reviews only dataframe, with user_id, business_id, and stars
+            reviews_records = []
+            for review in phase_reviews:
+                reviews_records.append((
+                    users_to_ids[review.user_id],
+                    businesses_to_ids[review.business_id],
+                    review.stars
+                ))
+            # Save reviews
+            reviews_df = pd.DataFrame(
+                reviews_records,
+                columns=['user', 'business', 'stars']
+            )
+            assert reviews_df.stars.min() >= 1
+            assert reviews_df.stars.max() <= 5
+            assert reviews_df.user.min() >= 0
+            assert reviews_df.user.max() < np.iinfo(np.uint32).max
+            assert reviews_df.business.min() >= 0
+            assert reviews_df.business.max() < np.iinfo(np.uint32).max
+
+            reviews_df.stars = reviews_df.stars.astype(np.uint8)
+            reviews_df.user = reviews_df.user.astype(np.uint32)
+            reviews_df.business = reviews_df.business.astype(np.uint32)
+
+            rfile = REVIEWS_FILE + '.{}.{}'.format(k, phase)
+            to_pickle_and_gz(reviews_df, rfile,
+                             csv=args.csv,
+                             gzip=args.csv_gzip)
+
             phase_reviews_sorted = sorted(list(phase_reviews.items()),
                                           key=lambda x: x[0])
             phase_matches = []
