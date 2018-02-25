@@ -51,7 +51,7 @@ if __name__ == '__main__':
     parser.add_argument('--rfile', default=REVIEWS_FILE,
                         help='Reviews file to load')
 
-    parser.add_argument('--n_samples', default=100000, type=int,
+    parser.add_argument('--n_samples', default=2000, type=int,
                         help='Number of MCMC samples per chain')
     parser.add_argument('--n_chains', default=4, type=int,
                         help='Number of MCMC chains')
@@ -134,7 +134,7 @@ if __name__ == '__main__':
     fits_df.to_feather(feather_fname)
     print("Saved", feather_fname)
 
-    print("Highest RHAT:")
+    print("Highest Rhat:")
     print(fits_df.Rhat.sort_values(ascending=False).head())
     # Renormalize reviews
 
