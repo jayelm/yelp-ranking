@@ -57,6 +57,8 @@ if __name__ == '__main__':
                         help='Number of MCMC chains')
     parser.add_argument('--test', action='store_true',
                         help='Test with fake data')
+    parser.add_argument('--save_stan', action='store_true',
+                        help='Save Stan model and fit data as pickles')
 
     parser.add_argument(
         '--save',
@@ -108,7 +110,7 @@ if __name__ == '__main__':
             'p': n_users,
             # All reviews
             'y': reviews.stars.values,
-            'user_idx': stan_users.values
+            'user_idx': stan_users.values.astype(np.uint32)
         }
 
     print("Building model")
