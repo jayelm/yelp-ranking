@@ -134,21 +134,7 @@ if __name__ == '__main__':
             pickle.dump(fit, ff)
         print("Saved", model_fname)
 
-    feather_fname = args.save.format(**vars(args)) + '.feather'
-    fits = fit.summary()
-    fits_df = pd.DataFrame(
-        fits['summary'],
-        columns=fits['summary_colnames'],
-        index=fits['summary_rownames'],
-        dtype=np.float32
-    ).reset_index()
-    fits_df.to_feather(feather_fname)
-    print("Saved", feather_fname)
-
-    print("Highest Rhat:")
-    print(fits_df.Rhat.sort_values(ascending=False).head())
     # Renormalize reviews
-
     reviews['review_scaled'] = np.nan
     reviews['review_scaled'] = reviews['review_scaled'].astype(np.float32)
     mu_i = fit.extract('mu_i')['mu_i']
@@ -186,3 +172,16 @@ if __name__ == '__main__':
     reviews_scaled_fname = args.save.format(**vars(args)) + '.reviews.feather'
     reviews.reset_index().to_feather(reviews_scaled_fname)
     print("Saved", reviews_scaled_fname)
+    feather_fname = args.save.format(**vars(args)) + '.feather'
+    fits = fit.summary()
+    fits_df = pd.DataFrame(
+        fits['summary'],
+        columns=fits['summary_colnames'],
+        index=fits['summary_rownames'],
+        dtype=np.float32
+    ).reset_index()
+    fits_df.to_feather(feather_fname)
+    print("Saved", feather_fname)
+
+    print("Highest Rhat:")
+    print(fits_df.Rhat.sort_values(ascending=False).head())
