@@ -64,7 +64,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     reviews = pd.read_pickle(args.rfile)
-    reviews = reviews[(reviews.user == 0) | (reviews.user == 2)]
 
     n_users = len(reviews.user.unique())
     print("{} users".format(n_users))
