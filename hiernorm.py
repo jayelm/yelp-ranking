@@ -53,6 +53,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--n_samples', default=2000, type=int,
                         help='Number of MCMC samples per chain')
+    parser.add_argument('--thin', default=1, type=int,
+                        help='MCMC thinning')
     parser.add_argument('--n_chains', default=4, type=int,
                         help='Number of MCMC chains')
     parser.add_argument('--test', action='store_true',
@@ -119,7 +121,8 @@ if __name__ == '__main__':
     model = StanModel_cache(model_code=model_code, model_name='hiernorm')
     print("Doing sampling: {} samples x {} chains".format(
         args.n_samples, args.n_chains))
-    fit = model.sampling(data=data, iter=args.n_samples, chains=args.n_chains)
+    fit = model.sampling(data=data, iter=args.n_samples, chains=args.n_chains,
+                         thin=args.thin)
 
     if args.save_stan:
         fit_fname = args.save.format(**vars(args)) + '.fit.pkl'
