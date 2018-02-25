@@ -134,6 +134,8 @@ if __name__ == '__main__':
     parser.add_argument('--corenlp_server', default='http://localhost:9000',
                         help='URL to StanfordCoreNLP server')
 
+    parser.add_argument('--sentiment', action='store_true',
+                        help='Do sentiment analysis')
     parser.add_argument('--csv', action='store_true',
                         help='Save .csv files')
     parser.add_argument('--csv_gzip', action='store_true',
@@ -146,13 +148,15 @@ if __name__ == '__main__':
     if args.csv_gzip and not args.csv:
         parser.error("Cannot specify --csv_gzip without --csv")
 
-    nlp = StanfordCoreNLP(args.corenlp_server)
+    if args.sentiment:
+        nlp = StanfordCoreNLP(args.corenlp_server)
 
     all_reviews = defaultdict(list)
     all_users = set()
     all_businesses = set()
     business_ratings = defaultdict(list)
-    business_sents = defaultdict(list)
+    if args.sentiment:
+        business_sents = defaultdict(list)
 
     n_lines = file_len(REVIEW_FILE)
     print("{} reviews".format(n_lines))
@@ -176,34 +180,38 @@ if __name__ == '__main__':
     all_businesses = list(all_businesses)
 
     # Choose a random sample of businesses
-    chosen = random.sample(all_businesses, 10000)
-    assert len(set(chosen)) == len(chosen)
-    chosen = set(chosen)
+    if args.sentiment:
+        chosen = random.sample(all_businesses, 10000)
+        assert len(set(chosen)) == len(chosen)
+        chosen = set(chosen)
 
-    # Perform sentiment analyss on a couple of those reviews
-    yes_sentiment = []
-    no_sentiment = []
-    for review in review_objs:
-        if review.business_id in chosen:
-            yes_sentiment.append(review)
-        else:
-            no_sentiment.append(review)
+        # Perform sentiment analyss on a couple of those reviews
+        yes_sentiment = []
+        no_sentiment = []
+        for review in review_objs:
+            if review.business_id in chosen:
+                yes_sentiment.append(review)
+            else:
+                no_sentiment.append(review)
 
-    pool = mp.Pool(N_CPU)
-    start = time.time()
-    yes_sentiment_added = pool.map(
-        add_sentiment,
-        tqdm(yes_sentiment, desc='Sentiment analysis'))
-    print("Elapsed time: {}".format(time.time() - start))
+        pool = mp.Pool(N_CPU)
+        start = time.time()
+        yes_sentiment_added = pool.map(
+            add_sentiment,
+            tqdm(yes_sentiment, desc='Sentiment analysis'))
+        print("Elapsed time: {}".format(time.time() - start))
 
-    reviews = yes_sentiment_added + no_sentiment
+        reviews = yes_sentiment_added + no_sentiment
+    else:
+        reviews = review_objs
 
     for review in reviews:
         all_reviews[review.user_id].append(review)
         all_users.add(review.user_id)
         business_ratings[review.business_id].append(review.stars)
-        if review.sentiment is not None:
-            business_sents[review.business_id].append(review.sentiment)
+        if args.sentiment:
+            if review.sentiment is not None:
+                business_sents[review.business_id].append(review.sentiment)
 
     print("{} users".format(len(all_users)))
     print("{} businesses".format(len(business_ratings.keys())))
@@ -216,22 +224,23 @@ if __name__ == '__main__':
         columns=['business_id', 'avg_rating', 'n_reviews'],
     )
 
-    def maybe_business_sent(bid):
-        if bid in business_sents:
-            return sum(business_sents[bid]) / len(business_sents[bid])
-        else:
-            return None
+    if args.sentiment:
+        def maybe_business_sent(bid):
+            if bid in business_sents:
+                return sum(business_sents[bid]) / len(business_sents[bid])
+            else:
+                return None
 
-    def maybe_var(bid):
-        if bid in business_sents:
-            return np.var(business_sents[bid])
-        else:
-            return None
+        def maybe_var(bid):
+            if bid in business_sents:
+                return np.var(business_sents[bid])
+            else:
+                return None
 
-    business_df['avg_sent'] = business_df.business_id.apply(
-        maybe_business_sent)
-    business_df['sent_var'] = business_df.business_id.apply(
-        maybe_var)
+        business_df['avg_sent'] = business_df.business_id.apply(
+            maybe_business_sent)
+        business_df['sent_var'] = business_df.business_id.apply(
+            maybe_var)
 
     # Smaller dtypes to save space
     assert business_df.n_reviews.min() > 0
@@ -239,8 +248,9 @@ if __name__ == '__main__':
 
     business_df.n_reviews = business_df.n_reviews.astype(np.uint16)
     business_df.avg_rating = business_df.avg_rating.astype(np.float32)
-    business_df.avg_sent = business_df.avg_sent.astype(np.float32)
-    business_df.sent_var = business_df.sent_var.astype(np.float32)
+    if args.sentiment:
+        business_df.avg_sent = business_df.avg_sent.astype(np.float32)
+        business_df.sent_var = business_df.sent_var.astype(np.float32)
     # Make dict *before* coercing to bytes
     businesses_to_ids = dict(zip(business_df.business_id, business_df.index))
     business_df.business_id = business_df.business_id.astype(np.character)
