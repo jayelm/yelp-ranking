@@ -6,7 +6,6 @@ from scipy.stats import norm
 import numpy as np
 from preprocess_reviews import BUSINESSES_FILE, MATCHES_FILE
 from tqdm import tqdm, trange
-from collections import namedtuple
 
 
 # Aliases
