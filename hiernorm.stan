@@ -6,19 +6,27 @@ data {
 }
 
 parameters {
-  vector[p] mu_i; // mean for user p
-  // vector<lower=0>[p] sigma_i; // variance for user p
   real mu;  // global mean
   real<lower=0> tau2;  // variance between user means
-  real<lower=0> sigma2;  // variance within one user's reviews
+  vector[p] mu_i; // mean for user p
+
+  real<lower=0> sigma2;  // global review variance
+  // variance between user variances
+  // (we approximate this with the non-conjugate
+  // normal prior because it's more interpretable)
+  real<lower=0> eta2;  // variance between user variances
+
+  vector<lower=0>[p] sigma_i; // review variance for user p
 }
 
 transformed parameters {
   real<lower=0> tau;
   real<lower=0> sigma;
+  real<lower=0> eta;
 
   tau = sqrt(tau2);
   sigma = sqrt(sigma2);
+  eta = sqrt(eta2);
 }
 
 model {
@@ -28,14 +36,14 @@ model {
   // Prior on variance between user means is inverse-gamma:
   tau2 ~ inv_gamma(1, 0.5);
 
-  // Prior on global within-user review variance
-  // TODO: Make this hierarchical too
-  // TODO: This should probably be slightly more uninformative.
+  // Global review variance mean
   sigma2 ~ inv_gamma(1, 0.5);
+  eta2 ~ inv_gamma(1, 0.5);
 
   mu_i ~ normal(mu, tau);
+  sigma_i ~ normal(sigma2, eta);
 
   for (i in 1:n) {
-    y[i] ~ normal(mu_i[user_idx[i]], sigma);
+    y[i] ~ normal(mu_i[user_idx[i]], sigma_i[user_idx[i]]);
   }
 }
