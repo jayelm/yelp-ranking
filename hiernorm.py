@@ -50,16 +50,18 @@ if __name__ == '__main__':
     parser.add_argument('--rfile', default=REVIEWS_FILE,
                         help='Reviews file to load')
 
-    parser.add_argument('--num_samples', default=100000, type=int,
-                        help='Number of NUTS samples')
+    parser.add_argument('--n_samples', default=100000, type=int,
+                        help='Number of MCMC samples per chain')
+    parser.add_argument('--n_chains', default=4, type=int,
+                        help='Number of MCMC chains')
     parser.add_argument('--test', action='store_true',
                         help='Test with fake data')
 
     parser.add_argument(
         '--save',
-        default='results/hiernorm_{num_samples}.pkl',
+        default='results/hiernorm_{n_samples}',
         type=str,
-        help='Where to save')
+        help='Where to save results (will append .model..pkl and .csv)')
 
     args = parser.parse_args()
 
@@ -111,5 +113,19 @@ if __name__ == '__main__':
     with open(MODEL, 'r') as fin:
         model_code = fin.read()
     model = StanModel_cache(model_code=model_code, model_name='hiernorm')
-    fit = model.sampling(data=data, iter=100000, chains=4)
-    print(fit)
+    fit = model.sampling(data=data, iter=args.n_samples, chains=args.n_chains)
+
+    fit_fname = args.save.format(**vars(args)) + '.fit.pkl'
+    model_fname = args.save.format(**vars(args)) + '.model.pkl'
+    csv_fname = args.save.format(**vars(args)) + '.csv'
+    with open(model_fname, 'wb') as mf:
+        pickle.dump(model, mf)
+    with open(fit_fname, 'wb') as ff:
+        pickle.dump(fit, ff)
+
+    fits = fit.summary()
+    pd.DataFrame(
+        fits['summary'],
+        columns=fits['summary_colnames'],
+        index=fits['summary_rownames']
+    ).to_csv(csv_fname)
