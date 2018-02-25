@@ -14,10 +14,6 @@ pdf = norm.pdf
 cdf = norm.cdf
 ppf = norm.ppf
 
-MPArgs = namedtuple('MPArgs', ['mu_s', 'p_s',
-                               'winner', 'loser', 'j',
-                               'p_gs', 'mu_gs'])
-
 
 def psi(x, e):
     return pdf(x - e) / cdf(x - e)
@@ -128,7 +124,6 @@ def gaussian_ep(M, n_players, D, fast_m_acc=False,
 
 def convert_matches_format(matches):
     # Order doesn't matter for draws
-    # TODO: Assert this is the case by deliberately switching the order around
     matches['b1_temp'] = np.where(matches.win == 1, matches.b1, matches.b2)
     matches['b2_temp'] = np.where(matches.win == 1, matches.b2, matches.b1)
     matches['b1'], matches['b2'] = matches['b1_temp'], matches['b2_temp']
@@ -142,6 +137,11 @@ if __name__ == '__main__':
     parser = ArgumentParser(
         description='Trueskill message passing',
         formatter_class=ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument('--bfile', default=BUSINESSES_FILE,
+                        help='Business file to load')
+    parser.add_argument('--mfile', default=MATCHES_FILE,
+                        help='Matches file to load')
 
     parser.add_argument('--num_samples', default=10, type=int,
                         help='Number of message passing samples')
@@ -160,16 +160,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.fast_m_acc:
-        global fma
         import pyximport
         pyximport.install(
             setup_args={'include_dirs': [np.get_include()]})
         import fast_m_acc as fma
 
     print("Loading matches")
-    matches = pd.read_pickle(MATCHES_FILE)
+    matches = pd.read_pickle(args.mfile)
     # Convert such that b1 is the winning column and b2 is the losing column
-    businesses = pd.read_pickle(BUSINESSES_FILE)
+    businesses = pd.read_pickle(args.bfile)
     n_businesses = businesses.shape[0]
 
     # Get draws as boolean array

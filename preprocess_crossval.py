@@ -171,7 +171,8 @@ if __name__ == '__main__':
 
         # Save bdf_split file
         # Smaller dtypes to save space
-        assert bdf_split.n_reviews.min() > 0
+        # In this case, n_reviews CAN be 0
+        assert not (bdf_split.n_reviews.min() < 0.0)
         assert bdf_split.n_reviews.max() < np.iinfo(np.uint16).max
 
         bdf_split.n_reviews = bdf_split.n_reviews.astype(np.uint16)
