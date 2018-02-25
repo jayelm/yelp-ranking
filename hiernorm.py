@@ -111,17 +111,23 @@ if __name__ == '__main__':
             'user_idx': stan_users.values
         }
 
+    print("Building model")
     with open(MODEL, 'r') as fin:
         model_code = fin.read()
     model = StanModel_cache(model_code=model_code, model_name='hiernorm')
+    print("Doing sampling: {} samples x {} chains".format(
+        args.n_samples, args.n_chains))
     fit = model.sampling(data=data, iter=args.n_samples, chains=args.n_chains)
 
-    #  fit_fname = args.save.format(**vars(args)) + '.fit.pkl'
-    #  model_fname = args.save.format(**vars(args)) + '.model.pkl'
-    #  with open(model_fname, 'wb') as mf:
-        #  pickle.dump(model, mf)
-    #  with open(fit_fname, 'wb') as ff:
-        #  pickle.dump(fit, ff)
+    if args.save_stan:
+        fit_fname = args.save.format(**vars(args)) + '.fit.pkl'
+        model_fname = args.save.format(**vars(args)) + '.model.pkl'
+        with open(model_fname, 'wb') as mf:
+            pickle.dump(model, mf)
+        print("Saved", fit_fname)
+        with open(fit_fname, 'wb') as ff:
+            pickle.dump(fit, ff)
+        print("Saved", model_fname)
 
     feather_fname = args.save.format(**vars(args)) + '.feather'
     fits = fit.summary()
