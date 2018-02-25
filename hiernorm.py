@@ -18,6 +18,7 @@ import pickle
 from hashlib import md5
 import numpy as np
 from scipy.stats import norm
+import numpy as np
 
 
 def StanModel_cache(model_code, model_name=None, **kwargs):
@@ -82,7 +83,7 @@ if __name__ == '__main__':
     reindex_rev = {v: k for k, v in reindexed_users.items()}
 
     # Reindex reviews
-    reviews.user = reviews.user.apply(lambda u: reindexed_users[u])
+    stan_users = reviews.user.apply(lambda u: reindexed_users[u])
 
     if args.test:
         s1 = 100
@@ -107,7 +108,7 @@ if __name__ == '__main__':
             'p': n_users,
             # All reviews
             'y': reviews.stars.values,
-            'user_idx': reviews.user.values
+            'user_idx': stan_users.values
         }
 
     with open(MODEL, 'r') as fin:
@@ -115,17 +116,62 @@ if __name__ == '__main__':
     model = StanModel_cache(model_code=model_code, model_name='hiernorm')
     fit = model.sampling(data=data, iter=args.n_samples, chains=args.n_chains)
 
-    fit_fname = args.save.format(**vars(args)) + '.fit.pkl'
-    model_fname = args.save.format(**vars(args)) + '.model.pkl'
-    csv_fname = args.save.format(**vars(args)) + '.csv'
-    with open(model_fname, 'wb') as mf:
-        pickle.dump(model, mf)
-    with open(fit_fname, 'wb') as ff:
-        pickle.dump(fit, ff)
+    #  fit_fname = args.save.format(**vars(args)) + '.fit.pkl'
+    #  model_fname = args.save.format(**vars(args)) + '.model.pkl'
+    #  with open(model_fname, 'wb') as mf:
+        #  pickle.dump(model, mf)
+    #  with open(fit_fname, 'wb') as ff:
+        #  pickle.dump(fit, ff)
 
+    feather_fname = args.save.format(**vars(args)) + '.feather'
     fits = fit.summary()
-    pd.DataFrame(
+    fits_df = pd.DataFrame(
         fits['summary'],
         columns=fits['summary_colnames'],
-        index=fits['summary_rownames']
-    ).to_csv(csv_fname)
+        index=fits['summary_rownames'],
+        dtype=np.float32
+    ).reset_index()
+    fits_df.to_feather(feather_fname)
+    print("Saved", feather_fname)
+
+    print("Highest RHAT:")
+    print(fits_df.Rhat.sort_values(ascending=False).head())
+    # Renormalize reviews
+
+    reviews['review_scaled'] = np.nan
+    reviews['review_scaled'] = reviews['review_scaled'].astype(np.float32)
+    mu_i = fit.extract('mu_i')['mu_i']
+    sigma_i = fit.extract('sigma_i')['sigma_i']
+    means_only_records = []
+    for stan_i, u_i in reindex_rev.items():
+        stan_i = stan_i - 1  # Back to numpy, 0 indexed!
+        # mean
+        u_mean_samps = mu_i[:, stan_i]
+        u_mean = u_mean_samps.mean()
+        u_mean_std = u_mean_samps.std()
+
+        # stddev
+        u_std_samps = sigma_i[:, stan_i]
+        u_std = u_std_samps.mean()
+        u_std_std = u_std_samps.std()
+
+        # Add to means only records
+        means_only_records.append((u_mean, u_mean_std, u_std, u_std_std))
+
+        # Re-scale existing reviews
+        user_reviews = reviews[reviews.user == u_i]
+        user_zscores = (user_reviews.stars - u_mean) / u_std
+        reviews.loc[reviews.user == u_i, 'review_scaled'] = user_zscores
+
+    # Save means only
+    mor_feather_fname = args.save.format(**vars(args)) + '.meansonly.feather'
+    mor_df = pd.DataFrame(
+        means_only_records, columns=['mean', 'mean_std', 'std', 'std_std']
+    ).reset_index()
+    mor_df.to_feather(mor_feather_fname)
+    print("Saved", mor_feather_fname)
+
+    # Save scaled reviews
+    reviews_scaled_fname = args.save.format(**vars(args)) + '.reviews.feather'
+    reviews.reset_index().to_feather(reviews_scaled_fname)
+    print("Saved", reviews_scaled_fname)
