@@ -22,6 +22,7 @@ REVIEW_FILE = 'dataset/review.json'
 USERS_FILE = 'dataset_processed/users.pkl'
 BUSINESSES_FILE = 'dataset_processed/businesses.pkl'
 MATCHES_FILE = 'dataset_processed/matches.pkl'
+REVIEWS_FILE = 'dataset_processed/reviews.pkl'
 
 EDGELISTS_DRAWS = 'dataset_processed/matches_draws_edgelist.csv'
 EDGELISTS_NO_DRAWS = 'dataset_processed/matches_no_draws_edgelist.csv'
@@ -255,6 +256,35 @@ if __name__ == '__main__':
     users_to_ids = dict(zip(users_df.user_id, users_df.index))
     users_df.user_id = users_df.user_id.astype(np.character)
     to_pickle_and_gz(users_df, USERS_FILE,
+                     csv=args.csv,
+                     gzip=args.csv_gzip)
+
+    # Now that mapping from users to ids has been established,
+    # create reviews only dataframe, with user_id, business_id, and stars
+    reviews_records = []
+    for review in reviews:
+        reviews_records.append((
+            users_to_ids[review.user_id],
+            businesses_to_ids[review.business_id],
+            review.stars
+        ))
+    # Save reviews
+    reviews_df = pd.DataFrame(
+        reviews_records,
+        columns=['user', 'business', 'stars']
+    )
+    assert reviews_df.stars.min() >= 1
+    assert reviews_df.stars.max() <= 5
+    assert reviews_df.user.min() >= 0
+    assert reviews_df.user.max() < np.iinfo(np.uint32).max
+    assert reviews_df.business.min() >= 0
+    assert reviews_df.business.max() < np.iinfo(np.uint32).max
+
+    reviews_df.stars = reviews_df.stars.astype(np.uint8)
+    reviews_df.user = reviews_df.user.astype(np.uint32)
+    reviews_df.business = reviews_df.business.astype(np.uint32)
+
+    to_pickle_and_gz(reviews_df, REVIEWS_FILE,
                      csv=args.csv,
                      gzip=args.csv_gzip)
 
