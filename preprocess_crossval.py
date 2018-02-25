@@ -195,12 +195,13 @@ if __name__ == '__main__':
                                      ('test', test_reviews)]:
             # Create reviews only dataframe, with user_id, business_id, and stars
             reviews_records = []
-            for review in phase_reviews:
-                reviews_records.append((
-                    users_to_ids[review.user_id],
-                    businesses_to_ids[review.business_id],
-                    review.stars
-                ))
+            for user in phase_reviews:
+                for review in phase_reviews[user]:
+                    reviews_records.append((
+                        users_to_ids[review.user_id],
+                        businesses_to_ids[review.business_id],
+                        review.stars
+                    ))
             # Save reviews
             reviews_df = pd.DataFrame(
                 reviews_records,
