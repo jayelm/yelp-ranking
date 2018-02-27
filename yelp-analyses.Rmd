@@ -9,15 +9,126 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(cowplot)
+library(MASS)
 library(ggExtra)
+library(GGally)
 library(igraph)
 library(data.table)
+library(feather)
 ```
 
 ```{r}
-bs = read.csv('results/businesses_mp_10.csv') %>%
-  tbl_df
+bs = read_csv('results/businesses_mp_10.csv')
 ```
+
+# Global setings, interpretations
+
+## Summary statistics
+
+Reviews
+
+```{r}
+reviews_all = read_feather('dataset_processed_all/reviews.feather')
+reviews_all %>%
+  summarise(mean = mean(stars),
+            std = sqrt(var(stars)),
+            n = n())
+```
+
+```{r}
+standardized_reviews = function(reviews_fname) {
+  rs = read_feather(reviews_fname)
+  user_counts = rs %>%
+    group_by(user) %>%
+    summarise(n = n(),
+              review_mean = mean(stars),
+              review_var = var(stars)) %>%
+    mutate(cat = factor(ifelse(n == 1, 'one', ifelse(n == 2, 'two', 'more'))))
+  
+  more_avg_mean = user_counts %>%
+    filter(cat == 'more') %>%
+    .$review_mean %>%
+    mean
+  
+  more_avg_var = user_counts %>%
+    filter(cat == 'more') %>%
+    .$review_var %>%
+    mean
+  
+  user_counts_wt = user_counts %>%
+    mutate(
+      review_mean = ifelse(cat == 'one',
+                       more_avg_mean,
+                       ifelse(cat == 'two',
+                              0.5 * (more_avg_mean + review_mean), review_mean)),
+      review_var = ifelse(cat == 'one',
+                      more_avg_var,
+                      ifelse(cat == 'two',
+                             0.5 * (more_avg_var + review_var), review_var))
+      )
+  
+  rs_wt = rs %>%
+    left_join(user_counts_wt, by = 'user') %>%
+    mutate(review_var = ifelse(review_var == 0, 1e-10, review_var)) %>%
+    mutate(z = (stars - review_mean) / sqrt(review_var))
+  
+  b_reviews = rs_wt %>%
+    group_by(business) %>%
+    summarise(z_rating = mean(z),
+              z_var = var(z)) %>%
+    arrange(business) %>%
+    mutate(business = business + 1)  # For R
+  
+  b_reviews
+}
+```
+
+Bind z scored reviews to businesses
+
+```{r}
+bs = bs %>% cbind(
+  standardized_reviews('dataset_processed_all/reviews.feather')
+)
+```
+
+
+Businesses stats
+
+```{r}
+read_feather('dataset_processed_all/temp.feather') %>%
+  summarise(n = n(),
+            mean_avg_rating = mean(avg_rating),
+            min_avg_rating = min(avg_rating),
+            max_avg_rating = max(avg_rating),
+            std_avg_rating = sqrt(var(avg_rating)),
+            mean_n_review = mean(n_reviews),
+            min_n_review = min(n_reviews),
+            max_n_review = max(n_reviews),
+            std_n_review = sqrt(var(n_reviews))) %>%
+  t
+```
+
+User review counts
+
+```{r}
+read_feather('dataset_processed_all/users.feather.mp') %>%
+  summarise(mean_n_review = mean(n_reviews),
+            min_n_review = min(n_reviews),
+            max_n_review = max(n_reviews),
+            std_n_review = sqrt(var(n_reviews)))
+```
+
+```{r}
+user_rev_counts = read_feather('dataset_processed_all/users.feather.mp') %>%
+  group_by(n_reviews == 1) %>%
+  summarise(n = n())
+
+print(user_rev_counts)
+user_rev_counts$n / sum(user_rev_counts$n)
+```
+
+
+## Comparison of all plots
 
 ```{r, warning=FALSE}
 p = ggplot(bs, aes(x = ts_rating, y = star_rating)) +
@@ -37,19 +148,146 @@ p %>%
   ggdraw
 ```
 
+```{r}
+ggpairs(bs, columns = c('star_rating', 'ts_rating', 'z_rating'), columnLabels = c('Star', 'TrueSkill', 'Z'),
+        diag = list(continuous = 'barDiag'),
+        lower = list(continuous = wrap('points', alpha = 0.1)))
+```
+
+
+# Cross-validation results
+
+Compute cross-validated test accuracy
+```{r}
+this_rs
+
+resf %>% mutate(index = index + 1) %>%
+  left_join(this_rs, by = 'index')
+```
+
+
+```{r}
+star_acc = c()
+ts_acc = c()
+z_acc = c()
+for (i in 0:4) {
+  this_rs = standardized_reviews(paste0('dataset_processed/reviews.feather.', i, '.test.feather')) %>%
+    rename(index = business)
+  mf_fname = paste0('dataset_processed/matches.feather.', i, '.test')
+  resf_fname = paste0('results/businesses_mp_10.', i, '.feather')
+  # Keep wins only
+  resf = read_feather(resf_fname) %>%
+    mutate(index = index + 1) %>%
+    left_join(this_rs, by = 'index')
+      
+  mf = read_feather(mf_fname) %>%
+    # Drop all draws
+    filter(win != 0) %>%
+    # Make win binary
+    mutate(win = win == 1) %>%
+    # Add one to businesses index for R
+    mutate(b1 = b1 + 1, b2 = b2 + 1) %>%
+    mutate(
+      b1_ts_rating = resf[b1, ]$ts_rating,
+      b2_ts_rating = resf[b2, ]$ts_rating,
+      b1_ts_variance = resf[b1, ]$ts_variance,
+      b2_ts_variance = resf[b2, ]$ts_variance,
+      b1_star_rating = resf[b1, ]$star_rating,
+      b2_star_rating = resf[b2, ]$star_rating,
+      b1_z_rating = resf[b1, ]$z_rating,
+      b2_z_rating = resf[b2, ]$z_rating
+      # TODO: Star variance
+    ) %>%
+    mutate(
+      ts_pred = b1_ts_rating > b2_ts_rating,
+      star_pred = b1_star_rating > b2_star_rating,
+      z_pred = b1_z_rating > b2_z_rating,
+      ts_correct = ts_pred == win,
+      star_correct = star_pred == win,
+      z_correct = z_pred == win
+    ) %>%
+    # NAs are false (no information)
+    mutate(
+      ts_correct = ifelse(is.na(ts_correct), FALSE, ts_correct),
+      star_correct = ifelse(is.na(star_correct), FALSE, star_correct),
+      z_correct = ifelse(is.na(z_correct), FALSE, z_correct)
+    )
+  
+  star_acc = c(star_acc, mean(mf$star_correct))
+  ts_acc = c(ts_acc, mean(mf$ts_correct))
+  z_acc = c(z_acc ,mean(mf$z_correct))
+}
+
+accs = data.frame(`Star` = star_acc, `TrueSkill` = ts_acc, `Z` = z_acc, k = 1:5) %>%
+  gather(Model, Accuracy, `Star`, `TrueSkill`, `Z`)
+```
+
+```{r}
+ggplot(accs, aes(x = Model, y = Accuracy, group = k)) +
+  geom_point() +
+  geom_line()
+```
+
+Wilcoxon rank sum test
+
+```{r}
+accs_wide = accs %>%
+  spread(Model, Accuracy)
+wilcox.test(accs_wide$Star, accs_wide$TrueSkill, paired = TRUE)
+```
+
+## Check misses
+
+```{r}
+ggplot(mf, aes(x = ts_correct, y = b1_ts_variance + b2_ts_variance)) +
+  geom_boxplot()
+# misses = mf %>%
+#   filter(ts_correct == FALSE)
+
+mean(mf %>% filter(ts_correct) %>% .$b1_ts_variance)
+mean(mf %>% filter(!ts_correct) %>% .$b1_ts_variance)
+
+misses
+```
+
+```{r}
+mf_n_rev = mf %>%
+  mutate(b1_n_reviews = resf[b1, ]$n_reviews,
+         b2_n_reviews = resf[b2, ]$n_reviews)
+
+mean(mf_n_rev %>% filter(ts_correct) %>% .$b1_n_reviews)
+mean(mf_n_rev %>% filter(!ts_correct) %>% .$b1_n_reviews)
+
+ggplot(mf_n_rev, aes(x = ts_correct, y = b1_n_reviews + b2_n_reviews)) +
+  geom_violin()
+```
+
+There is no difference between the variance/etc. Additional performance on this task could involve modeling individual user preferences (see below).
+
+## Correlation between variances
+
+```{r}
+mf %>%
+  filter(!ts_correct)
+  mutate()
+```
+
+
+
+
 ## Sentiment analysis
 
 ```{r}
 bs_sent = bs %>% na.omit
 
 bs_long = bs_sent %>%
-  rename(`Star` = star_rating, `TrueSkill` = ts_rating) %>%
-  gather(type, rating, `Star`, `TrueSkill`)
+  rename(`Star` = star_rating, `TrueSkill` = ts_rating, `Z` = z_rating) %>%
+  gather(type, rating, `Star`, `TrueSkill`, `Z`)
 
 bs_long_corrs = bs_long %>%
   group_by(type) %>%
   summarise(r = cor(rating, avg_sent)) %>%
-  mutate(x = c(4.5, 1.45))
+  mutate(x = c(4.5, 1.45, 1))
 
 ggplot(bs_long, aes(x = rating, y = avg_sent)) +
   geom_point(alpha = 0.05) +
@@ -69,6 +307,13 @@ psych::paired.r(
   xy = cor(bs_sent$avg_sent, bs_sent$ts_rating),
   xz = cor(bs_sent$avg_sent, bs_sent$star_rating),
   yz = cor(bs_sent$ts_rating, bs_sent$star_rating),
+  n = nrow(bs_sent)
+)
+
+psych::paired.r(
+  xy = cor(bs_sent$avg_sent, bs_sent$z_rating),
+  xz = cor(bs_sent$avg_sent, bs_sent$star_rating),
+  yz = cor(bs_sent$z_rating, bs_sent$star_rating),
   n = nrow(bs_sent)
 )
 ```
