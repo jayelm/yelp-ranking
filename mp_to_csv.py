@@ -30,17 +30,21 @@ if __name__ == '__main__':
 
     businesses = pd.read_pickle(args.bfile)
     matches = pd.read_pickle(args.mfile)
-    # Drop draws, for now
+    # Count draws
+    draws = matches[matches.win == 0]
+    draws_counter = np.bincount(matches.b1) + np.bincount(matches.b2)
+    # Drop draws and count wins
     matches = matches[matches.win != 0]
     matches = convert_matches_format(matches)
     wins_counter = np.bincount(matches.b1)
     losses_counter = np.bincount(matches.b2)
-    matches_counter = wins_counter + losses_counter
+    matches_counter = wins_counter + losses_counter + draws_counter
 
     # Add matches, wins, losses
     businesses['matches'] = matches_counter
     businesses['wins'] = wins_counter
     businesses['losses'] = losses_counter
+    businesses['draws'] = draws_counter
 
     businesses = businesses.rename(columns={'avg_rating': 'star_rating'})
 
