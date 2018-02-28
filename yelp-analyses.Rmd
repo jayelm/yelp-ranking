@@ -3,13 +3,14 @@ title: "Yelp Analyses"
 author: "Jesse Mu"
 date: "2/12/2018"
 output: html_document
----
+e--
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+library(MASS)
+library(caret)
 library(tidyverse)
 library(cowplot)
-library(MASS)
 library(ggExtra)
 library(GGally)
 library(igraph)
@@ -18,8 +19,31 @@ library(feather)
 ```
 
 ```{r}
-bs = read_csv('results/businesses_mp_10.csv')
+# bs = read_csv('results/businesses_mp_10.csv')
+bs = read_feather('results/businesses_mp_10.feather')
 ```
+
+```{r fig.height=3, fig.width = 5}
+bs_sorted_sample = bs %>%
+  arrange(n_reviews) %>%
+  mutate(x = 1:length(n_reviews)) %>%
+  mutate(wins = wins / matches, draws = draws / matches, losses = losses / matches) %>%
+  rename(Wins = wins, Draws = draws, Losses = losses) %>% 
+  gather(`Match Outcomes`, `Percent`, Wins, Draws, Losses)
+
+# idxs = data.frame(
+#   x = sapply(1:5, function(i) which(bs_sorted_sample$star_rating >= i)[1])
+# )
+
+downward_p = ggplot(bs_sorted_sample, aes(x = n_reviews, weight = Percent, fill = `Match Outcomes`)) +
+  geom_histogram(position = 'fill') +
+  # geom_area(position = 'fill') +
+  # geom_vline(xintercept = idxs$x) +
+  xlab('')
+  # scale_x_continuous(breaks = idxs$x, labels = 1:5)
+# downward_p
+```
+
 
 # Global setings, interpretations
 
@@ -128,48 +152,88 @@ user_rev_counts$n / sum(user_rev_counts$n)
 ```
 
 
+
 ## Comparison of all plots
 
-```{r, warning=FALSE}
-p = ggplot(bs, aes(x = ts_rating, y = star_rating)) +
+```{r pairs, fig.width=5, fig.height = 4}
+ggpairs(bs, columns = c('star_rating', 'ts_rating', 'z_rating'), columnLabels = c('Star', 'TrueSkill', 'Z'),
+        diag = list(continuous = wrap('barDiag')),
+        lower = list(continuous = wrap('points', alpha = 0.01))) +
+  theme(panel.grid.minor = element_blank(), 
+        panel.grid.major = element_blank())
+```
+```{r, fig.width = 6, fig.height = 5}
+bs_5star_nrev = bs %>%
+  mutate(is5 = star_rating == 5) %>%
+  rename(`Star` = star_rating, `TrueSkill` = ts_rating, `Z` = z_rating) %>%
+  gather(Type, Rating, `Star`, `TrueSkill`, `Z`)
+
+  
+scatter1 = ggplot(bs_5star_nrev, aes(x = log(n_reviews), y = Rating, color = is5)) +
   geom_point(alpha = 0.05) +
-  xlab('TrueSkill Rating') +
-  ylab('Star Rating')
+  guides(color = FALSE, alpha = FALSE) +
+  facet_wrap(~ Type, scales = 'free_y') +
+  scale_color_manual(values = c('grey', 'red')) +
+  xlab('Reviews') +
+  scale_x_continuous(breaks = c(log(1), log(10), log(100), log(1000)),
+                     labels = c('1', '10', '100', '1000'))
 
-x_marginal = axis_canvas(p, axis = "x") +
-  geom_histogram(data = bs, aes(x = ts_rating))
-y_marginal = axis_canvas(p, axis = "y", coord_flip = TRUE) +
-  geom_histogram(data = bs, aes(x = star_rating)) +
-  coord_flip()
-
-p %>%
-  insert_xaxis_grob(x_marginal, grid::unit(0.75, "in"), position = "top") %>%
-  insert_yaxis_grob(y_marginal, grid::unit(0.75, "in"), position = "right") %>%
-  ggdraw
+scatter1
 ```
 
 ```{r}
-ggpairs(bs, columns = c('star_rating', 'ts_rating', 'z_rating'), columnLabels = c('Star', 'TrueSkill', 'Z'),
-        diag = list(continuous = 'barDiag'),
-        lower = list(continuous = wrap('points', alpha = 0.1)))
+bs %>%
+  filter(star_rating == 5) %>%
+  nrow
 ```
 
+
+
+
+Why are TrueSkill and Z so normally distributed? Check match outcomes distributions (esp. wins)
+
+```{r}
+bs_5star = bs %>%
+  # filter(star_rating == 5) %>%
+  dplyr::select(`Star` = star_rating, `TrueSkill` = ts_rating, `Z` = z_rating) %>%
+  mutate(highlight = `Star` == 5) %>%
+  gather(type, score, `Star`, `TrueSkill`, `Z`)
+# Make 1 star 0, to make it show up
+
+ggplot(bs_5star, aes(x = score, fill = highlight)) +
+  geom_histogram() +
+  facet_wrap(~ type, scales = 'free_x') +
+  ylab('Count') +
+  xlab('Rating')
+# mf %>% .$win %>% table
+```
 
 # Cross-validation results
 
 Compute cross-validated test accuracy
+
+Draw probability
+
 ```{r}
-this_rs
-
-resf %>% mutate(index = index + 1) %>%
-  left_join(this_rs, by = 'index')
+p_draw = function(mu1, mu2, sigma21, sigma22, eps = 0.424) {
+  mu_diff = mu1 - mu2
+  pooled_sd = sqrt(sigma21 + sigma22 + 1)
+  pnorm(eps, mean = mu_diff, sd = pooled_sd) - pnorm(-eps, mean = mu_diff, sd = pooled_sd)
+}
 ```
-
 
 ```{r}
 star_acc = c()
 ts_acc = c()
 z_acc = c()
+
+star_acc_draw = c()
+ts_acc_draw = c()
+ts_acc_std_draw = c()
+
+star_cm = list()
+ts_cm = list()
+
 for (i in 0:4) {
   this_rs = standardized_reviews(paste0('dataset_processed/reviews.feather.', i, '.test.feather')) %>%
     rename(index = business)
@@ -180,20 +244,23 @@ for (i in 0:4) {
     mutate(index = index + 1) %>%
     left_join(this_rs, by = 'index')
       
+  # No draws
   mf = read_feather(mf_fname) %>%
     # Drop all draws
     filter(win != 0) %>%
     # Make win binary
-    mutate(win = win == 1) %>%
+    mutate(windraw = win, win = win == 1) %>%
     # Add one to businesses index for R
     mutate(b1 = b1 + 1, b2 = b2 + 1) %>%
     mutate(
       b1_ts_rating = resf[b1, ]$ts_rating,
       b2_ts_rating = resf[b2, ]$ts_rating,
-      b1_ts_variance = resf[b1, ]$ts_variance,
-      b2_ts_variance = resf[b2, ]$ts_variance,
+      b1_ts_variance = resf[b1, ]$ts_variance ^ 2,
+      b2_ts_variance = resf[b2, ]$ts_variance ^ 2,
       b1_star_rating = resf[b1, ]$star_rating,
       b2_star_rating = resf[b2, ]$star_rating,
+      b1_n_reviews = resf[b1, ]$n_reviews,
+      b2_n_reviews = resf[b2, ]$n_reviews,
       b1_z_rating = resf[b1, ]$z_rating,
       b2_z_rating = resf[b2, ]$z_rating
       # TODO: Star variance
@@ -213,71 +280,152 @@ for (i in 0:4) {
       z_correct = ifelse(is.na(z_correct), FALSE, z_correct)
     )
   
+  # Optimize EPS (draw margin, dependent on BETA) to maximize accuracy on training set.
+  acc_eps = function(eps) {
+    preds = p_draw(mf$b1_ts_rating, mf$b2_ts_rating, mf$b1_ts_variance, mf$b2_ts_variance, eps = eps)
+    preds = ifelse(preds > 0.5, 0, ifelse(mf$b1_ts_rating > mf$b2_ts_rating, 1, -1))
+    # Enforce that preds makes at least one true prediction - that's where the interval likely lies.
+    if (sum(preds == 0) == 0) {
+      message("Got NaN")
+      return(-1)
+    }
+    acc = mean(preds == mf$windraw)
+    message("eps:", eps, " acc:", acc)
+    acc
+  }
+  
+  ideal_eps = optimize(acc_eps, lower = 0, upper = 5, maximum = TRUE, tol = 0.01)$maximum
+  message("Ideal EPS:", ideal_eps)
+  
   star_acc = c(star_acc, mean(mf$star_correct))
   ts_acc = c(ts_acc, mean(mf$ts_correct))
   z_acc = c(z_acc ,mean(mf$z_correct))
+  
+  # Draw predictions
+  mfd = read_feather(mf_fname) %>%
+    mutate(b1 = b1 + 1, b2 = b2 + 1) %>%
+    mutate(
+      b1_ts_rating = resf[b1, ]$ts_rating,
+      b2_ts_rating = resf[b2, ]$ts_rating,
+      # NOTE: ts variance is actually ts STD!
+      b1_ts_variance = resf[b1, ]$ts_variance ^ 2,
+      b2_ts_variance = resf[b2, ]$ts_variance ^ 2,
+      b1_star_rating = round(resf[b1, ]$star_rating),
+      b2_star_rating = round(resf[b2, ]$star_rating),
+      b1_z_rating = resf[b1, ]$z_rating,
+      b2_z_rating = resf[b2, ]$z_rating
+    ) %>%
+    mutate(
+      ts_pred = ifelse(
+        p_draw(b1_ts_rating, b2_ts_rating, b1_ts_variance, b2_ts_variance, eps = ideal_eps) > 0.5,
+        # p_draw(b1_ts_rating, b2_ts_rating, b1_ts_variance, b2_ts_variance) > 0.5,
+        0,
+        ifelse(b1_ts_rating > b2_ts_rating, 1, -1)
+      ),
+      ts_pred_std = ifelse(
+        p_draw(b1_ts_rating, b2_ts_rating, b1_ts_variance, b2_ts_variance) > 0.5,
+        0,
+        ifelse(b1_ts_rating > b2_ts_rating, 1, -1)
+      ),
+      star_pred = ifelse(b1_star_rating > b2_star_rating, 1,
+                         ifelse(b1_star_rating == b2_star_rating, 0, -1)),
+      ts_correct = ts_pred == win,
+      ts_correct_std = ts_pred_std == win,
+      star_correct = star_pred == win
+    ) %>%
+    mutate(
+      ts_correct = ifelse(is.na(ts_correct), FALSE, ts_correct),
+      ts_correct_std = ifelse(is.na(ts_correct_std), FALSE, ts_correct_std),
+      star_correct = ifelse(is.na(star_correct), FALSE, star_correct)
+    )
+  
+  star_acc_draw = c(star_acc_draw, mean(mfd$star_correct))
+  message("TS accuracy: ", mean(mfd$ts_correct))
+  ts_acc_draw = c(ts_acc_draw, mean(mfd$ts_correct))
+  ts_acc_std_draw = c(ts_acc_std_draw, mean(mfd$ts_correct_std))
+  
+  ts_cm = list(ts_cm, confusionMatrix(factor(mfd$ts_pred, levels = c(1, 0, -1)), factor(mfd$win, levels = c(1, 0, -1)))$table)
+  star_cm = list(star_cm, confusionMatrix(factor(mfd$star_pred, levels = c(1, 0, -1)), factor(mfd$win, levels = c(1, 0, -1)))$table)
 }
 
 accs = data.frame(`Star` = star_acc, `TrueSkill` = ts_acc, `Z` = z_acc, k = 1:5) %>%
   gather(Model, Accuracy, `Star`, `TrueSkill`, `Z`)
+
+
+se = function(i) {
+  sd(i) / sqrt(length(i))
+}
+
+accs %>%
+  group_by(Model) %>%
+  summarise(acc_mean = mean(Accuracy),
+            acc_stderr = se(Accuracy))
+
+
+accs_draw = data.frame(`Star` = star_acc_draw, `TrueSkill` = ts_acc_draw, k = 1:5) %>%
+  gather(Model, Accuracy, `Star`, `TrueSkill`) %>%
+  group_by(Model)
+
+accs_draw %>%
+  summarise(acc_mean = mean(Accuracy),
+            acc_stderr = se(Accuracy))
+  
+```
+
+Test of differences
+
+```{r}
+# These aren't paired, but whatever...
+summary(oneway.test(Accuracy ~ Model, accs))
+TukeyHSD(aov(Accuracy ~ Model, data = accs))
+
+t.test(accs_draw %>% filter(Model == 'Star') %>% .$Accuracy,
+       accs_draw %>% filter(Model == 'TrueSkill') %>% .$Accuracy,
+       paired = TRUE)
+       
+# T test of beta-tuned model versus standard model
+t.test(ts_acc_draw, ts_acc_std_draw, paired = TRUE)
 ```
 
 ```{r}
-ggplot(accs, aes(x = Model, y = Accuracy, group = k)) +
+rowSums(array(unlist(ts_cm), dim = c(3, 3, 5)), dims = 2) / 1000000
+rowSums(array(unlist(star_cm), dim = c(3, 3, 5)), dims = 2) / 1000000
+```
+
+Pair plot
+
+```{r}
+ggplot(accs, aes(x = Model, y = Accuracy, group = k, color = factor(k))) +
   geom_point() +
+  guides(color = FALSE) +
   geom_line()
 ```
 
-Wilcoxon rank sum test
+## Check misses properties
+
+Do the incorrect guesses have more uncertainty?
 
 ```{r}
-accs_wide = accs %>%
-  spread(Model, Accuracy)
-wilcox.test(accs_wide$Star, accs_wide$TrueSkill, paired = TRUE)
+misses = mf %>%
+  filter(ts_correct == FALSE)
+
+print(mean(mf %>% filter(ts_correct) %>% .$b1_ts_variance))
+print(mean(mf %>% filter(!ts_correct) %>% .$b1_ts_variance))
+
+yes = mf %>% filter(ts_correct) %>% mutate(total_var = b1_ts_variance + b2_ts_variance)
+no = mf %>% filter(!ts_correct) %>% mutate(total_var = b1_ts_variance + b2_ts_variance)
+
+yes = mf %>% filter(ts_correct) %>% mutate(total_var = b1_ts_variance + b2_ts_variance)
+no = mf %>% filter(!ts_correct) %>% mutate(total_var = b1_ts_variance + b2_ts_variance)
+
+yes_star = mf %>% filter(star_correct) %>% mutate(total_n_rev = b1_n_reviews + b2_n_reviews)
+no_star = mf %>% filter(!star_correct) %>% mutate(total_n_rev = b1_n_reviews + b2_n_reviews)
+wilcox.test(yes_star$total_n_rev, no_star$total_n_rev)
 ```
-
-## Check misses
-
-```{r}
-ggplot(mf, aes(x = ts_correct, y = b1_ts_variance + b2_ts_variance)) +
-  geom_boxplot()
-# misses = mf %>%
-#   filter(ts_correct == FALSE)
-
-mean(mf %>% filter(ts_correct) %>% .$b1_ts_variance)
-mean(mf %>% filter(!ts_correct) %>% .$b1_ts_variance)
-
-misses
-```
-
-```{r}
-mf_n_rev = mf %>%
-  mutate(b1_n_reviews = resf[b1, ]$n_reviews,
-         b2_n_reviews = resf[b2, ]$n_reviews)
-
-mean(mf_n_rev %>% filter(ts_correct) %>% .$b1_n_reviews)
-mean(mf_n_rev %>% filter(!ts_correct) %>% .$b1_n_reviews)
-
-ggplot(mf_n_rev, aes(x = ts_correct, y = b1_n_reviews + b2_n_reviews)) +
-  geom_violin()
-```
-
-There is no difference between the variance/etc. Additional performance on this task could involve modeling individual user preferences (see below).
-
-## Correlation between variances
-
-```{r}
-mf %>%
-  filter(!ts_correct)
-  mutate()
-```
-
-
-
 
 ## Sentiment analysis
 
-```{r}
+```{r, fig.height = 3.5, fig.width = 6.3}
 bs_sent = bs %>% na.omit
 
 bs_long = bs_sent %>%
@@ -287,7 +435,7 @@ bs_long = bs_sent %>%
 bs_long_corrs = bs_long %>%
   group_by(type) %>%
   summarise(r = cor(rating, avg_sent)) %>%
-  mutate(x = c(4.5, 1.45, 1))
+  mutate(x = c(4.2, 1.3, 0.9))
 
 ggplot(bs_long, aes(x = rating, y = avg_sent)) +
   geom_point(alpha = 0.05) +
@@ -314,6 +462,13 @@ psych::paired.r(
   xy = cor(bs_sent$avg_sent, bs_sent$z_rating),
   xz = cor(bs_sent$avg_sent, bs_sent$star_rating),
   yz = cor(bs_sent$z_rating, bs_sent$star_rating),
+  n = nrow(bs_sent)
+)
+
+psych::paired.r(
+  xy = cor(bs_sent$avg_sent, bs_sent$z_rating),
+  xz = cor(bs_sent$avg_sent, bs_sent$ts_rating),
+  yz = cor(bs_sent$z_rating, bs_sent$ts_ratin),
   n = nrow(bs_sent)
 )
 ```

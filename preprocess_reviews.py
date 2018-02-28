@@ -216,12 +216,12 @@ if __name__ == '__main__':
     print("{} users".format(len(all_users)))
     print("{} businesses".format(len(business_ratings.keys())))
 
-    avg_business_records = [(b, sum(rs) / len(rs), len(rs))
+    avg_business_records = [(b, sum(rs) / len(rs), np.var(rs), len(rs))
                             for b, rs in business_ratings.items()]
     avg_business_records = sorted(avg_business_records, key=lambda x: x[0])
     business_df = pd.DataFrame(
         avg_business_records,
-        columns=['business_id', 'avg_rating', 'n_reviews'],
+        columns=['business_id', 'avg_rating', 'star_var', 'n_reviews'],
     )
 
     if args.sentiment:
@@ -248,6 +248,7 @@ if __name__ == '__main__':
 
     business_df.n_reviews = business_df.n_reviews.astype(np.uint16)
     business_df.avg_rating = business_df.avg_rating.astype(np.float32)
+    business_df.star_var = business_df.star_var.astype(np.float32)
     if args.sentiment:
         business_df.avg_sent = business_df.avg_sent.astype(np.float32)
         business_df.sent_var = business_df.sent_var.astype(np.float32)
